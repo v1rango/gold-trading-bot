@@ -11,20 +11,26 @@ import time
 logger = logging.getLogger(__name__)
 
 
-def _fetch_raw(interval: str, period: str, max_retries: int = 3) -> pd.DataFrame:
+def _fetch_raw(interval: str, period: str, max_retries: int = 2) -> pd.DataFrame:
+    # Standard periods accepted by Yahoo Finance
+    fallback_periods = [period, "3mo", "60d"] if interval == "1h" else [period, "30d", "60d"]
     df = None
-    for attempt in range(max_retries):
-        try:
-            gold = yf.Ticker("GC=F")
-            df = gold.history(period=period, interval=interval)
-            if df is not None and not df.empty:
-                break
-        except Exception as e:
-            logger.warning(f"Fetch attempt {attempt+1} failed: {e}")
-        time.sleep(1.0)
+
+    for p in fallback_periods:
+        for attempt in range(max_retries):
+            try:
+                gold = yf.Ticker("GC=F")
+                df = gold.history(period=p, interval=interval)
+                if df is not None and not df.empty and len(df) >= 20:
+                    break
+            except Exception as e:
+                logger.warning(f"Fetch failed for {p} attempt {attempt+1}: {e}")
+            time.sleep(0.5)
+        if df is not None and not df.empty and len(df) >= 20:
+            break
 
     if df is None or df.empty:
-        raise ValueError(f"داده‌ای برای طلا با تایم‌فریم {interval} و دوره {period} دریافت نشد.")
+        raise ValueError(f"داده‌ای برای طلا با تایم‌فریم {interval} دریافت نشد.")
 
     # Flatten MultiIndex columns if present
     if isinstance(df.columns, pd.MultiIndex):
@@ -51,7 +57,7 @@ def _fetch_raw(interval: str, period: str, max_retries: int = 3) -> pd.DataFrame
 
 def get_gold_4h(limit: int = 350) -> pd.DataFrame:
     """4-hour candles (resampled from 1H, with enough history for EMA200)."""
-    df = _fetch_raw("1h", "120d")
+    df = _fetch_raw("1h", "3mo")
     df_4h = df.resample("4h").agg(
         {"open": "first", "high": "max", "low": "min",
          "close": "last", "volume": "sum"}
@@ -61,7 +67,7 @@ def get_gold_4h(limit: int = 350) -> pd.DataFrame:
 
 def get_gold_1h(limit: int = 350) -> pd.DataFrame:
     """1-hour candles (with enough history for EMA200)."""
-    df = _fetch_raw("1h", "60d")
+    df = _fetch_raw("1h", "3mo")
     return df.tail(limit)
 
 
