@@ -3,7 +3,9 @@ Gold Trading Bot — Main Entry Point
 Monitors XAU/USD across 4H / 1H / 30M timeframes.
 Active hours: 12:00 – 00:00 Tehran time (scan every 15 min).
 """
-import logging, sys
+import logging
+import sys
+import threading
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,16 +18,13 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-
-from data.gold   import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
-from data.news   import fetch_news
-
+from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
+from data.news import fetch_news
 from strategies.indicators import calculate_indicators
-from strategies.signals    import generate_signal
-
+from strategies.signals import generate_signal
 from bot.telegram_bot import TelegramBot
-from bot.formatter    import format_signal, format_daily_summary, format_startup
-
+from bot.formatter import format_signal, format_daily_summary, format_startup, _now
+from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -37,10 +36,10 @@ _last_key: str = ""
 
 # ─── scan ─────────────────────────────────────────────────────────────────────
 
-def scan_gold() -> None:
+def scan_gold(is_manual: bool = False) -> None:
     global _last_key
     logger.info("=" * 55)
-    logger.info("Gold scan started …")
+    logger.info(f"Gold scan started (manual={is_manual}) …")
 
     try:
         # Fetch multi-timeframe data
@@ -51,33 +50,46 @@ def scan_gold() -> None:
         price = get_gold_price()
         sig   = generate_signal(df4h, df1h, df30m, current_price=price["price"])
 
-        if sig is None:
-            logger.info("No signal generated.")
+        # 1. Valid Signal Found -> Send full signal alert
+        if sig is not None and sig.direction in ("BUY", "SELL"):
+            key = f"{sig.direction}_{sig.confluence}_{round(sig.entry, 1)}"
+            if key != _last_key or is_manual:
+                msg = format_signal(sig, price)
+                if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard()):
+                    _last_key = key
+                    logger.info(
+                        f"Signal sent: {sig.direction} entry={sig.entry} "
+                        f"TP={sig.take_profit} SL={sig.stop_loss} "
+                        f"RR={sig.rr_ratio} prob={sig.win_probability}%"
+                    )
+            else:
+                logger.info(f"Same signal as before ({key}), skipped.")
             return
 
-        if sig.direction == "NONE":
-            logger.info(f"Signal skipped: {sig.skip_reason}")
-            return
-
-        # Dedup: same direction + same confluence score = same signal
-        key = f"{sig.direction}_{sig.confluence}_{round(sig.entry, 1)}"
-        if key == _last_key:
-            logger.info(f"Same signal as last scan ({key}), skipping.")
-            return
-
-        msg = format_signal(sig, price)
-        if bot.send_message(msg):
-            _last_key = key
-            logger.info(
-                f"Signal sent: {sig.direction}  entry={sig.entry}"
-                f"  TP={sig.take_profit}  SL={sig.stop_loss}"
-                f"  RR={sig.rr_ratio}  prob={sig.win_probability}%"
-                f"  confluence={sig.confluence}/{sig.total_checks}"
+        # 2. Manual Scan Request -> Provide informative market status report
+        if is_manual:
+            reason = sig.skip_reason if sig else "عدم تطابق شروط ورود"
+            curr_1h = df1h.iloc[-1]
+            status_msg = (
+                f"🔍 *گزارش اسکن دستی طلا*\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 قیمت لحظه‌ای: `${price['price']:,.2f}`\n"
+                f"📊 وضعیت بازار: `{reason}`\n"
+                f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}`\n"
+                f"⚡ شاخص مومنتوم (RSI): `{curr_1h['rsi']:.1f}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"ℹ️ _سیگنال ورود با نسبت ریسک به ریوارد حداقل ۲ یافت نشد._\n"
+                f"🕐 `{_now()}`"
             )
+            bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard())
+            logger.info("Manual scan status sent to Telegram.")
+        else:
+            logger.info(f"Automatic scan completed silently: {sig.skip_reason if sig else 'No signal'}")
 
     except Exception as exc:
         logger.error(f"Scan error: {exc}", exc_info=True)
-        bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`")
+        if is_manual:
+            bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`")
 
 
 # ─── daily summary ─────────────────────────────────────────────────────────────
@@ -86,7 +98,6 @@ def daily_summary() -> None:
     try:
         price = get_gold_price()
         news  = fetch_news()
-        # filter gold-related news
         gold_news = [n for n in news if n["type"] == "GOLD"] or news[:3]
         bot.send_message(format_daily_summary(price, gold_news))
         logger.info("Daily summary sent.")
@@ -103,14 +114,22 @@ def main() -> None:
         logger.critical("Telegram connection failed — check token!")
         sys.exit(1)
 
-    bot.send_message(format_startup())
-    logger.info("Startup message sent.")
+    # 1. Send startup welcome message with bottom buttons
+    bot.send_message(format_startup(), reply_markup=bot.get_main_keyboard())
+    logger.info("Startup message sent with main keyboard.")
 
-    # First scan right away
-    scan_gold()
+    # 2. Start real-time Telegram button listener in a background thread
+    listener_thread = threading.Thread(
+        target=start_listener,
+        args=(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, scan_gold, daily_summary),
+        daemon=True,
+    )
+    listener_thread.start()
+    logger.info("Telegram interactive listener thread started.")
 
-    scheduler = setup_scheduler(scan_gold, daily_summary)
-    logger.info("Scheduler running. Ctrl+C to stop.")
+    # 3. Setup and start scheduled scans (every 10 minutes)
+    scheduler = setup_scheduler(lambda: scan_gold(is_manual=False), daily_summary)
+    logger.info("Scheduler running (every 10 min). Ctrl+C to stop.")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
