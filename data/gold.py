@@ -6,19 +6,45 @@ import yfinance as yf
 import pandas as pd
 import logging
 import math
+import time
 
 logger = logging.getLogger(__name__)
 
 
-def _fetch_raw(interval: str, period: str) -> pd.DataFrame:
-    gold = yf.Ticker("GC=F")
-    df = gold.history(period=period, interval=interval)
+def _fetch_raw(interval: str, period: str, max_retries: int = 3) -> pd.DataFrame:
+    df = None
+    for attempt in range(max_retries):
+        try:
+            gold = yf.Ticker("GC=F")
+            df = gold.history(period=period, interval=interval)
+            if df is not None and not df.empty:
+                break
+        except Exception as e:
+            logger.warning(f"Fetch attempt {attempt+1} failed: {e}")
+        time.sleep(1.0)
+
+    if df is None or df.empty:
+        raise ValueError(f"داده‌ای برای طلا با تایم‌فریم {interval} و دوره {period} دریافت نشد.")
+
+    # Flatten MultiIndex columns if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     df = df.rename(columns={"Open": "open", "High": "high",
                              "Low": "low",  "Close": "close",
                              "Volume": "volume"})
     df = df[["open", "high", "low", "close", "volume"]].copy()
-    if df.index.tz is not None:
-        df.index = df.index.tz_localize(None)
+
+    # Safely strip timezone without throwing AttributeError
+    if hasattr(df.index, "tz") and df.index.tz is not None:
+        try:
+            df.index = df.index.tz_localize(None)
+        except Exception:
+            try:
+                df.index = df.index.tz_convert(None)
+            except Exception:
+                pass
+
     df.dropna(inplace=True)
     return df
 
@@ -65,7 +91,7 @@ def get_gold_price() -> dict:
     if last is None:
         try:
             df1m = gold.history(period="1d", interval="1m")
-            if not df1m.empty:
+            if df1m is not None and not df1m.empty:
                 val = float(df1m["Close"].iloc[-1])
                 if not math.isnan(val) and val > 0:
                     last = val
@@ -73,14 +99,18 @@ def get_gold_price() -> dict:
             pass
 
     # 3. 24h change & fallback price from 1h data
-    df1h = _fetch_raw("1h", "2d")
+    try:
+        df1h = _fetch_raw("1h", "5d")
+    except Exception:
+        df1h = pd.DataFrame()
+
     if last is None and not df1h.empty:
         last = float(df1h["close"].iloc[-1])
 
-    if len(df1h) >= 24 and last is not None:
+    if not df1h.empty and len(df1h) >= 24 and last is not None:
         prev_24h = float(df1h["close"].iloc[-24])
         change   = ((last - prev_24h) / prev_24h) * 100
-    elif len(df1h) >= 2 and last is not None:
+    elif not df1h.empty and len(df1h) >= 2 and last is not None:
         prev = float(df1h["close"].iloc[-2])
         change = ((last - prev) / prev) * 100
     else:
