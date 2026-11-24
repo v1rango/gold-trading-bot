@@ -1,0 +1,45 @@
+name: Gold Market Scanner
+
+on:
+  schedule:
+    # Runs every 10 minutes from 08:30 UTC to 20:30 UTC (12:00 PM to 00:00 AM Tehran time)
+    # Cron format: minute hour day-of-month month day-of-week
+    # Note: Sunday evening to Friday evening (Gold market days)
+    - cron: '*/10 8-20 * * 1-5'
+  
+  # Allows manual button trigger from GitHub website or mobile app anytime!
+  workflow_dispatch:
+    inputs:
+      force_report:
+        description: 'Send status report even if no signal found'
+        type: boolean
+        default: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Market Scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scan_once.py --manual
+          else
+            python scan_once.py
+          fi
