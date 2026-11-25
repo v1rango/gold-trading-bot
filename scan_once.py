@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("scanner")
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS
 from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
 from strategies.indicators import calculate_indicators
 from strategies.signals import generate_signal
@@ -32,7 +32,7 @@ def main():
     parser.add_argument("--sleep",  action="store_true", help="Send 00:00 AM goodnight message")
     args = parser.parse_args()
 
-    bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS)
 
     # ── Goodnight mode (00:00 Tehran) ─────────────────────────────────────────
     if args.sleep:

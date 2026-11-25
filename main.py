@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS
 from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
 from data.news import fetch_news
 from strategies.indicators import calculate_indicators
@@ -31,7 +31,7 @@ from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
-bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS)
 
 # Dedup: remember last sent signal key
 _last_key: str = ""
@@ -39,7 +39,7 @@ _last_key: str = ""
 
 # ─── scan ─────────────────────────────────────────────────────────────────────
 
-def scan_gold(is_manual: bool = False) -> None:
+def scan_gold(is_manual: bool = False, target_chat_id: str | None = None) -> None:
     global _last_key
     logger.info("=" * 55)
     logger.info(f"Gold scan started (manual={is_manual}) …")
@@ -58,8 +58,9 @@ def scan_gold(is_manual: bool = False) -> None:
             key = f"{sig.direction}_{sig.confluence}_{round(sig.entry, 1)}"
             if key != _last_key or is_manual:
                 msg = format_signal(sig, price)
-                if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard()):
-                    _last_key = key
+                if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id):
+                    if not is_manual:
+                        _last_key = key
                     logger.info(
                         f"Signal sent: {sig.direction} entry={sig.entry} "
                         f"TP={sig.take_profit} SL={sig.stop_loss} "
@@ -72,7 +73,7 @@ def scan_gold(is_manual: bool = False) -> None:
         # 2. Manual Scan Request -> Provide informative market status report
         if is_manual:
             status_msg = format_manual_status(price, df1h.iloc[-1], sig.skip_reason)
-            bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard())
+            bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id)
             logger.info("Manual scan status sent to Telegram.")
         else:
             logger.info(f"Automatic scan completed silently: {sig.skip_reason}")
@@ -80,17 +81,17 @@ def scan_gold(is_manual: bool = False) -> None:
     except Exception as exc:
         logger.error(f"Scan error: {exc}", exc_info=True)
         if is_manual:
-            bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`")
+            bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`", chat_id=target_chat_id)
 
 
 # ─── daily summary ─────────────────────────────────────────────────────────────
 
-def daily_summary() -> None:
+def daily_summary(target_chat_id: str | None = None) -> None:
     try:
         price = get_gold_price()
         news  = fetch_news()
         gold_news = [n for n in news if n["type"] == "GOLD"] or news[:3]
-        bot.send_message(format_daily_summary(price, gold_news))
+        bot.send_message(format_daily_summary(price, gold_news), chat_id=target_chat_id)
         logger.info("Daily summary sent.")
     except Exception as exc:
         logger.error(f"Daily summary error: {exc}", exc_info=True)
@@ -131,7 +132,7 @@ def main() -> None:
     # 2. Start real-time Telegram button listener in a background thread
     listener_thread = threading.Thread(
         target=start_listener,
-        args=(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, scan_gold, daily_summary),
+        args=(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS, scan_gold, daily_summary),
         daemon=True,
     )
     listener_thread.start()

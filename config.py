@@ -3,7 +3,12 @@ import pytz
 
 # ===== Telegram (Reads from Environment if available, else hardcoded) =====
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "9005969882:AAHh3cR_s2xhmVT6cftymPxuKTs-sccQpaI")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "8211920466")
+_raw_chats = os.getenv("TELEGRAM_CHAT_ID", "8211920466")
+_extra_chats = ["8211920466", "6641086503"]
+TELEGRAM_CHAT_IDS = list(dict.fromkeys(
+    [c.strip() for c in _raw_chats.split(",") if c.strip()] + _extra_chats
+))
+TELEGRAM_CHAT_ID = TELEGRAM_CHAT_IDS[0]
 
 # ===== Gold =====
 GOLD_SYMBOL = "OANDA:XAUUSD"
