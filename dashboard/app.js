@@ -1,4 +1,4 @@
-/* Gold AI Terminal — Client-Side App */
+/* Gold Terminal — Minimalist XAU/USD Workspace */
 
 const DEFAULT_AUTH_HASH = "9b3d275b0c617fae57e3e5bf9270181ac952904ac6575f3f79c9740a459b75f7";
 
@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   SESSION: "gold_dash_session",
   JOURNAL: "gold_dash_journal_v1",
   SETTINGS: "gold_dash_settings_v1",
+  THEME: "gold_dash_theme",
 };
 
 const PROVIDER_DEFAULTS = {
@@ -20,8 +21,8 @@ let dashboardData = null;
 let liveBrowserQuote = null;
 let currentFilter = "ALL";
 let currentChartTf = "15";
+let activeView = "terminal";
 let chatHistory = [];
-let tvScriptLoaded = false;
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
@@ -34,11 +35,9 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-// Pure-JS SHA-256 fallback (for non-HTTPS contexts where crypto.subtle may be unavailable)
 function sha256Fallback(ascii) {
   const rightRotate = (v, amt) => (v >>> amt) | (v << (32 - amt));
-  const mathPow = Math.pow;
-  const maxWord = mathPow(2, 32);
+  const maxWord = Math.pow(2, 32);
   let result = "";
   const words = [];
   const asciiBitLength = ascii.length * 8;
@@ -49,15 +48,14 @@ function sha256Fallback(ascii) {
   for (let candidate = 2; primeCounter < 64; candidate++) {
     if (!isComposite[candidate]) {
       for (let i = 0; i < 313; i += candidate) isComposite[i] = candidate;
-      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
-      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+      hash[primeCounter] = (Math.pow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (Math.pow(candidate, 1 / 3) * maxWord) | 0;
     }
   }
   ascii += "\x80";
   while ((ascii.length % 64) - 56) ascii += "\x00";
   for (let i = 0; i < ascii.length; i++) {
-    const j = ascii.charCodeAt(i);
-    words[i >> 2] |= j << (((3 - i) % 4) * 8);
+    words[i >> 2] |= ascii.charCodeAt(i) << (((3 - i) % 4) * 8);
   }
   words[words.length] = (asciiBitLength / maxWord) | 0;
   words[words.length] = asciiBitLength;
@@ -108,18 +106,17 @@ async function sha256Hex(text) {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   }
-  const utf8 = unescape(encodeURIComponent(text));
-  return sha256Fallback(utf8);
+  return sha256Fallback(unescape(encodeURIComponent(text)));
 }
 
 function getSettings() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    const parsed = raw ? JSON.parse(raw) : {};
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || "{}");
+    const provider = parsed.aiProvider || "gemini";
     return {
-      aiProvider: parsed.aiProvider || "gemini",
+      aiProvider: provider,
       aiKey: parsed.aiKey || "",
-      aiModel: parsed.aiModel || PROVIDER_DEFAULTS[parsed.aiProvider || "gemini"].model,
+      aiModel: parsed.aiModel || PROVIDER_DEFAULTS[provider].model,
       aiEndpoint: parsed.aiEndpoint || "",
       geminiSearch: parsed.geminiSearch !== false,
       defaultRisk: Number(parsed.defaultRisk) > 0 ? Number(parsed.defaultRisk) : 10,
@@ -142,8 +139,7 @@ function saveSettings(next) {
 
 function getJournal() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.JOURNAL);
-    const arr = raw ? JSON.parse(raw) : [];
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEYS.JOURNAL) || "[]");
     return Array.isArray(arr) ? arr : [];
   } catch {
     return [];
@@ -158,6 +154,60 @@ function formatMoney(num) {
   const n = Number(num) || 0;
   const sign = n > 0 ? "+" : n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toFixed(2)}`;
+}
+
+// ─── Theme & Navigation ─────────────────────────────────────────────────────
+
+function getTheme() {
+  return localStorage.getItem(STORAGE_KEYS.THEME) || "dark";
+}
+
+function applyTheme(theme, reloadChart = false) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem(STORAGE_KEYS.THEME, theme);
+  const sun = document.getElementById("theme-icon-sun");
+  const moon = document.getElementById("theme-icon-moon");
+  if (sun && moon) {
+    sun.classList.toggle("hidden", theme === "light");
+    moon.classList.toggle("hidden", theme === "dark");
+  }
+  if (reloadChart && initialized) {
+    renderTradingView(currentChartTf);
+    renderJournal();
+  }
+}
+
+function switchView(viewName) {
+  activeView = viewName;
+  document.querySelectorAll(".nav-tab").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-view") === viewName);
+  });
+  document.getElementById("view-terminal").classList.toggle("hidden", viewName !== "terminal");
+  document.getElementById("view-journal").classList.toggle("hidden", viewName !== "journal");
+  if (viewName === "journal") {
+    requestAnimationFrame(() => renderJournal());
+  }
+}
+
+function setupNavigationAndRail() {
+  document.querySelectorAll(".nav-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.getAttribute("data-view")));
+  });
+
+  document.querySelectorAll("#rail-tabs .seg-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.getAttribute("data-rail");
+      document.querySelectorAll("#rail-tabs .seg-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      ["signals", "indicators", "news"].forEach((name) => {
+        document.getElementById(`rail-${name}`).classList.toggle("hidden", name !== target);
+      });
+    });
+  });
+
+  document.getElementById("btn-theme").addEventListener("click", () => {
+    applyTheme(getTheme() === "dark" ? "light" : "dark", true);
+  });
 }
 
 // ─── Auth / Login ───────────────────────────────────────────────────────────
@@ -178,6 +228,7 @@ function showApp() {
 }
 
 function setupLogin() {
+  applyTheme(getTheme(), false);
   if (isLoggedIn()) {
     showApp();
     return;
@@ -195,11 +246,8 @@ function setupLogin() {
     const computed = await sha256Hex(`${user}:${pass}`);
 
     if (computed === targetHash) {
-      if (remember) {
-        localStorage.setItem(STORAGE_KEYS.SESSION, targetHash);
-      } else {
-        sessionStorage.setItem(STORAGE_KEYS.SESSION, targetHash);
-      }
+      if (remember) localStorage.setItem(STORAGE_KEYS.SESSION, targetHash);
+      else sessionStorage.setItem(STORAGE_KEYS.SESSION, targetHash);
       showApp();
     } else {
       errEl.classList.remove("hidden");
@@ -213,9 +261,10 @@ function renderTradingView(tf = currentChartTf) {
   currentChartTf = tf;
   const container = document.getElementById("tv-chart-container");
   container.innerHTML = "";
+  const theme = getTheme();
 
   if (typeof TradingView === "undefined" || !TradingView.widget) {
-    container.innerHTML = `<div style="padding:2rem;text-align:center;color:#8b96ad">امکان لود ویجت TradingView وجود ندارد (فیلترشکن یا اینترنت را چک کنید).</div>`;
+    container.innerHTML = `<div class="muted" style="padding:2rem;text-align:center">امکان لود چارت TradingView وجود ندارد.</div>`;
     return;
   }
 
@@ -224,7 +273,7 @@ function renderTradingView(tf = currentChartTf) {
     symbol: "OANDA:XAUUSD",
     interval: tf,
     timezone: "Asia/Tehran",
-    theme: "dark",
+    theme,
     style: "1",
     locale: "en",
     enable_publishing: false,
@@ -232,8 +281,8 @@ function renderTradingView(tf = currentChartTf) {
     hide_legend: false,
     save_image: false,
     container_id: "tv-chart-container",
-    backgroundColor: "#0f131c",
-    gridColor: "#1a2030",
+    backgroundColor: theme === "dark" ? "#111114" : "#ffffff",
+    gridColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.05)",
   });
 }
 
@@ -267,8 +316,7 @@ async function fetchLiveBrowserPrice() {
       liveBrowserQuote = {
         price: Number(row[0]),
         change_24h: Number(row[1] || 0),
-        source: "Live 15s (TV Spot)",
-        fetchedAt: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        source: "Live 15s",
       };
       renderLiveHeaderPrice();
     }
@@ -278,34 +326,30 @@ async function fetchLiveBrowserPrice() {
 }
 
 function getEffectiveMarketPrice() {
-  if (liveBrowserQuote && liveBrowserQuote.price) {
-    return liveBrowserQuote;
-  }
+  if (liveBrowserQuote?.price) return liveBrowserQuote;
   const m = dashboardData?.market;
-  if (m && m.price) {
+  if (m?.price) {
     return {
       price: Number(m.price),
       change_24h: Number(m.change_24h || 0),
-      source: "Bot 5m Cache",
-      fetchedAt: dashboardData.updated_at_tehran || "--",
+      source: "Bot 5m",
     };
   }
   return null;
 }
 
 function renderLiveHeaderPrice() {
-  const priceEl = document.getElementById("live-price");
-  const chgEl = document.getElementById("live-change");
-  const feedEl = document.getElementById("live-feed-badge");
-
   const q = getEffectiveMarketPrice();
   if (!q) return;
 
-  priceEl.textContent = `$${q.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById("live-price").textContent =
+    `$${q.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const chg = Number(q.change_24h || 0);
+  const chgEl = document.getElementById("live-change");
   chgEl.textContent = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`;
-  chgEl.className = `mono badge ${chg >= 0 ? "badge-green" : "badge-red"}`;
-  feedEl.textContent = q.source;
+  chgEl.className = `mono tag ${chg >= 0 ? "tag-green" : "tag-red"}`;
+  document.getElementById("live-feed-badge").textContent = q.source;
 }
 
 function renderBotSnapshot() {
@@ -313,36 +357,35 @@ function renderBotSnapshot() {
   renderLiveHeaderPrice();
 
   const m = dashboardData.market || {};
-  document.getElementById("last-updated-text").textContent =
-    `آخرین اسکن ربات: ${dashboardData.updated_at_tehran || "--"}`;
+  document.getElementById("last-updated-text").textContent = dashboardData.updated_at_tehran || "--";
 
   const biasEl = document.getElementById("htf-bias-badge");
   const bias = m.htf_bias || "NEUTRAL";
-  biasEl.textContent = `روند کلان: ${bias === "BULLISH" ? "صعودی 🟢" : bias === "BEARISH" ? "نزولی 🔴" : "رنج / خنثی 🟡"}`;
-  biasEl.className = `badge ${bias === "BULLISH" ? "badge-green" : bias === "BEARISH" ? "badge-red" : "badge-gold"}`;
+  biasEl.textContent =
+    bias === "BULLISH" ? "روند کلان: صعودی" : bias === "BEARISH" ? "روند کلان: نزولی" : "روند کلان: خنثی";
+  biasEl.className = `tag ${bias === "BULLISH" ? "tag-green" : bias === "BEARISH" ? "tag-red" : "tag-gold"}`;
 
-  // Indicators grid
   const i1h = m.indicators_1h || {};
   const i15 = m.indicators_15m || {};
   const i5 = m.indicators_5m || {};
-  const pills = [
+  const rows = [
     ["RSI 1H (14)", i1h.rsi ?? "--"],
     ["RSI 15M (7)", i15.rsi_7 ?? "--"],
-    ["Stoch 15M (K/D)", i15.osc_k != null ? `${i15.osc_k}/${i15.osc_d}` : "--"],
+    ["Stoch 15M (K/D)", i15.osc_k != null ? `${i15.osc_k} / ${i15.osc_d}` : "--"],
     ["ADX 1H", i1h.adx ?? "--"],
     ["ATR 1H / 15M", i1h.atr != null ? `${i1h.atr} / ${i15.atr ?? "-"}` : "--"],
     ["EMA200 (15M)", i15.ema_200 != null ? `$${i15.ema_200}` : "--"],
     ["EMA200 (1H)", i1h.ema_200 != null ? `$${i1h.ema_200}` : "--"],
     ["RSI 5M (7)", i5.rsi_7 ?? "--"],
-    ["BB 1H", i1h.bb_lower != null ? `${i1h.bb_lower}-${i1h.bb_upper}` : "--"],
+    ["BB 1H", i1h.bb_lower != null ? `${i1h.bb_lower} - ${i1h.bb_upper}` : "--"],
   ];
 
-  document.getElementById("indicators-grid").innerHTML = pills
-    .map(([label, val]) => `<div class="ind-pill"><span>${escapeHtml(label)}</span><strong class="mono">${escapeHtml(val)}</strong></div>`)
+  document.getElementById("indicators-grid").innerHTML = rows
+    .map(([k, v]) => `<div class="kv-row"><span class="muted">${escapeHtml(k)}</span><strong class="mono">${escapeHtml(v)}</strong></div>`)
     .join("");
 
   document.getElementById("bot-reason-box").textContent =
-    m.reason_1h ? `وضعیت فعلی 1H: ${m.reason_1h} ${m.htf_text ? `(${m.htf_text})` : ""}` : "منتظر اسکن بعدی ربات...";
+    m.reason_1h || "منتظر اسکن بعدی ربات...";
 
   renderNews(dashboardData.news || []);
   renderBotSignals(dashboardData.signals || []);
@@ -351,11 +394,10 @@ function renderBotSnapshot() {
 function renderNews(news) {
   const el = document.getElementById("news-list");
   if (!news.length) {
-    el.innerHTML = `<div class="muted-sm">رویداد USD مهمی برای نمایش ثبت نشده است.</div>`;
+    el.innerHTML = `<div class="muted" style="padding:1rem 0;text-align:center">خبر USD مهمی برای نمایش وجود ندارد.</div>`;
     return;
   }
 
-  // Prioritize today's & upcoming events first
   const sorted = [...news].sort((a, b) => {
     if (a.is_today !== b.is_today) return a.is_today ? -1 : 1;
     return (a.date_utc || "").localeCompare(b.date_utc || "");
@@ -363,26 +405,26 @@ function renderNews(news) {
 
   el.innerHTML = sorted
     .map((ev) => {
-      const impactBadge =
+      const impactTag =
         ev.impact === "High"
-          ? `<span class="badge badge-red">🔴 مهم</span>`
-          : `<span class="badge badge-gold">🟠 متوسط</span>`;
-      const todayBadge = ev.is_today ? `<span class="badge badge-green">امروز</span>` : "";
-      const vals = [
-        ev.forecast ? `پیش‌بینی: ${ev.forecast}` : "",
-        ev.previous ? `قبلی: ${ev.previous}` : "",
-        ev.actual ? `واقعی: ${ev.actual}` : "",
+          ? `<span class="tag tag-red">High</span>`
+          : `<span class="tag tag-gold">Med</span>`;
+      const todayTag = ev.is_today ? `<span class="tag tag-green">امروز</span>` : "";
+      const meta = [
+        ev.forecast ? `Fc: ${ev.forecast}` : "",
+        ev.previous ? `Prev: ${ev.previous}` : "",
+        ev.actual ? `Act: ${ev.actual}` : "",
       ]
         .filter(Boolean)
-        .join(" | ");
+        .join(" • ");
 
       return `
-        <div class="news-item ${ev.is_today ? "today" : ""}">
+        <div class="news-row ${ev.is_today ? "today" : ""}">
           <div>
             <div><strong>${escapeHtml(ev.title)}</strong></div>
-            <div class="muted-sm mono">${escapeHtml(ev.tehran_date)} • ${escapeHtml(ev.tehran_time)} ${vals ? `— ${escapeHtml(vals)}` : ""}</div>
+            <div class="muted mono">${escapeHtml(ev.tehran_date)} ${escapeHtml(ev.tehran_time)}${meta ? ` — ${escapeHtml(meta)}` : ""}</div>
           </div>
-          <div class="news-meta">${todayBadge}${impactBadge}</div>
+          <div class="row-gap">${todayTag}${impactTag}</div>
         </div>
       `;
     })
@@ -394,54 +436,50 @@ function renderBotSignals(signals) {
   document.getElementById("signals-count-badge").textContent = String(signals.length);
 
   if (!signals.length) {
-    el.innerHTML = `<div class="muted-sm">هنوز سیگنال جدیدی از زمان راه‌اندازی داشبورد ثبت نشده است؛ با اولین سیگنال اینجا ظاهر می‌شود. همچنین می‌توانی معاملات خودت را در فرم کنار دستی ثبت کنی.</div>`;
+    el.innerHTML = `<div class="muted" style="padding:1.5rem 0;text-align:center">هنوز سیگنالی ثبت نشده است. معاملات شخصی را می‌توانید در تب «ژورنال و وین‌ریت» ثبت کنید.</div>`;
     return;
   }
 
-  const journal = getJournal();
-  const loggedIds = new Set(journal.map((j) => j.signalId).filter(Boolean));
+  const loggedIds = new Set(getJournal().map((j) => j.signalId).filter(Boolean));
 
   el.innerHTML = signals
     .map((s) => {
-      const dirBadge =
+      const dirTag =
         s.direction === "BUY"
-          ? `<span class="badge badge-green">BUY 🟢</span>`
-          : `<span class="badge badge-red">SELL 🔴</span>`;
+          ? `<span class="tag tag-green mono">BUY</span>`
+          : `<span class="tag tag-red mono">SELL</span>`;
 
-      let autoBadge = `<span class="badge badge-muted">⏳ باز</span>`;
-      if (s.auto_outcome === "TP_HIT") autoBadge = `<span class="badge badge-green">چک خودکار: TP ✅</span>`;
-      if (s.auto_outcome === "SL_HIT") autoBadge = `<span class="badge badge-red">چک خودکار: SL ❌</span>`;
+      let autoTag = `<span class="tag tag-neutral">باز</span>`;
+      if (s.auto_outcome === "TP_HIT") autoTag = `<span class="tag tag-green">سیستم: TP</span>`;
+      if (s.auto_outcome === "SL_HIT") autoTag = `<span class="tag tag-red">سیستم: SL</span>`;
 
-      const alreadyLogged = loggedIds.has(s.id)
-        ? `<span class="badge badge-gold">ثبت‌شده در ژورنال ✓</span>`
-        : "";
+      const loggedTag = loggedIds.has(s.id) ? `<span class="tag tag-gold">ثبت‌شده</span>` : "";
 
       return `
-        <div class="signal-card">
-          <div class="signal-top">
-            <div class="news-meta">
-              ${dirBadge}
-              <strong>${escapeHtml(s.strategy_name)}</strong>
-              <span class="badge badge-outline mono">${escapeHtml(s.timeframe)}</span>
+        <div class="sig-item">
+          <div class="sig-head">
+            <div class="row-gap">
+              ${dirTag}
+              <strong style="font-size:0.82rem">${escapeHtml(s.strategy_name)}</strong>
             </div>
-            <div class="news-meta">
-              ${autoBadge}
-              ${alreadyLogged}
-              <span class="muted-sm mono">${escapeHtml(s.timestamp_tehran)}</span>
+            <div class="row-gap">
+              ${autoTag}
+              ${loggedTag}
+              <span class="muted mono">${escapeHtml(s.timestamp_tehran)}</span>
             </div>
           </div>
-          <div class="signal-levels mono">
-            <div class="level-box"><span class="muted-sm">Entry</span><strong>$${escapeHtml(s.entry)}</strong></div>
-            <div class="level-box"><span class="muted-sm">SL</span><strong class="text-red">$${escapeHtml(s.stop_loss)}</strong></div>
-            <div class="level-box"><span class="muted-sm">TP</span><strong class="text-green">$${escapeHtml(s.take_profit)}</strong></div>
-            <div class="level-box"><span class="muted-sm">R:R</span><strong class="text-gold">1:${escapeHtml(s.rr_ratio)}</strong></div>
+          <div class="sig-prices mono">
+            <div><span class="muted">Entry</span><strong>$${escapeHtml(s.entry)}</strong></div>
+            <div><span class="muted">SL</span><strong class="text-red">$${escapeHtml(s.stop_loss)}</strong></div>
+            <div><span class="muted">TP</span><strong class="text-green">$${escapeHtml(s.take_profit)}</strong></div>
+            <div><span class="muted">R:R</span><strong class="text-gold">1:${escapeHtml(s.rr_ratio)}</strong></div>
           </div>
-          <div class="signal-actions">
-            <button class="chip chip-win" data-sig-action="TP" data-sig-id="${escapeHtml(s.id)}">✅ تارگت خورد</button>
-            <button class="chip chip-loss" data-sig-action="SL" data-sig-id="${escapeHtml(s.id)}">❌ استاپ خورد</button>
-            <button class="chip chip-win" data-sig-action="MANUAL_PROFIT" data-sig-id="${escapeHtml(s.id)}">💰 سود دستی</button>
-            <button class="chip chip-loss" data-sig-action="MANUAL_LOSS" data-sig-id="${escapeHtml(s.id)}">✂️ ضرر دستی</button>
-            <button class="chip chip-be" data-sig-action="BE" data-sig-id="${escapeHtml(s.id)}">⚖️ سر به سر</button>
+          <div class="sig-btns">
+            <button class="outcome-pill win" data-sig-action="TP" data-sig-id="${escapeHtml(s.id)}">تارگت</button>
+            <button class="outcome-pill loss" data-sig-action="SL" data-sig-id="${escapeHtml(s.id)}">استاپ</button>
+            <button class="outcome-pill win" data-sig-action="MANUAL_PROFIT" data-sig-id="${escapeHtml(s.id)}">سود دستی</button>
+            <button class="outcome-pill loss" data-sig-action="MANUAL_LOSS" data-sig-id="${escapeHtml(s.id)}">ضرر دستی</button>
+            <button class="outcome-pill be" data-sig-action="BE" data-sig-id="${escapeHtml(s.id)}">سر به سر</button>
           </div>
         </div>
       `;
@@ -468,28 +506,22 @@ function handleSignalQuickAction(sig, action) {
   else if (sig.timeframe.includes("5M")) engineValue = "5M";
   else if (sig.timeframe.includes("1H")) engineValue = "1H";
 
+  switchView("journal");
+
   document.getElementById("tf-signal-id").value = sig.id;
   document.getElementById("tf-direction").value = sig.direction;
   document.getElementById("tf-engine").value = engineValue;
   document.getElementById("tf-outcome").value = action;
-  document.getElementById("tf-note").value = `${sig.strategy_name} (${sig.entry} → TP ${sig.take_profit} / SL ${sig.stop_loss})`;
+  document.getElementById("tf-note").value = `${sig.strategy_name} (${sig.entry})`;
 
   const pnlInput = document.getElementById("tf-pnl");
-  if (action === "TP") {
-    pnlInput.value = (baseRisk * Number(sig.rr_ratio || 2)).toFixed(2);
-  } else if (action === "SL") {
-    pnlInput.value = (-baseRisk).toFixed(2);
-  } else if (action === "BE") {
-    pnlInput.value = "0";
-  } else if (action === "MANUAL_PROFIT") {
-    pnlInput.value = "";
-    pnlInput.focus();
-  } else if (action === "MANUAL_LOSS") {
+  if (action === "TP") pnlInput.value = (baseRisk * Number(sig.rr_ratio || 2)).toFixed(2);
+  else if (action === "SL") pnlInput.value = (-baseRisk).toFixed(2);
+  else if (action === "BE") pnlInput.value = "0";
+  else {
     pnlInput.value = "";
     pnlInput.focus();
   }
-
-  document.getElementById("trade-form").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 // ─── Trade Journal, Analytics & Equity Curve ────────────────────────────────
@@ -503,10 +535,8 @@ function computeJournalStats(journal) {
   let grossLoss = 0;
   let maxStreak = 0;
   let curStreak = 0;
-
   const byEngine = {};
 
-  // Process oldest to newest for streak & equity
   const chrono = [...journal].sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
   const equityPoints = [0];
 
@@ -567,27 +597,34 @@ function computeJournalStats(journal) {
 
 function renderEquityCurve(points) {
   const canvas = document.getElementById("equity-canvas");
+  if (!canvas || !canvas.parentElement) return;
+  const parentWidth = canvas.parentElement.clientWidth;
+  if (parentWidth <= 0) return;
+
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  const width = canvas.parentElement.clientWidth - 20;
-  const height = 165;
+  const width = Math.max(240, parentWidth - 16);
+  const height = 170;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.scale(dpr, dpr);
-
   ctx.clearRect(0, 0, width, height);
 
+  const isLight = getTheme() === "light";
+  const mutedColor = isLight ? "#71717a" : "#71717a";
+  const gridColor = isLight ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)";
+
   if (!points || points.length < 2) {
-    ctx.fillStyle = "#8b96ad";
-    ctx.font = "13px Vazirmatn, sans-serif";
+    ctx.fillStyle = mutedColor;
+    ctx.font = "12px Vazirmatn, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("پس از ثبت اولین معامله، منحنی رشد سرمایه اینجا رسم می‌شود.", width / 2, height / 2);
+    ctx.fillText("پس از ثبت اولین معامله، منحنی رشد سرمایه اینجا نمایش داده می‌شود.", width / 2, height / 2);
     return;
   }
 
-  const padX = 16;
+  const padX = 14;
   const padY = 18;
   const minVal = Math.min(...points, 0);
   const maxVal = Math.max(...points, 0);
@@ -596,9 +633,8 @@ function renderEquityCurve(points) {
   const toX = (i) => padX + (i / (points.length - 1)) * (width - padX * 2);
   const toY = (v) => height - padY - ((v - minVal) / span) * (height - padY * 2);
 
-  // Zero baseline
   const zeroY = toY(0);
-  ctx.strokeStyle = "#263044";
+  ctx.strokeStyle = gridColor;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(padX, zeroY);
@@ -607,11 +643,10 @@ function renderEquityCurve(points) {
   ctx.setLineDash([]);
 
   const lastVal = points[points.length - 1];
-  const lineColor = lastVal >= 0 ? "#10b981" : "#ef4444";
+  const lineColor = lastVal >= 0 ? "#22c55e" : "#ef4444";
 
-  // Gradient fill
   const grad = ctx.createLinearGradient(0, 0, 0, height);
-  grad.addColorStop(0, lastVal >= 0 ? "rgba(16,185,129,0.28)" : "rgba(239,68,68,0.28)");
+  grad.addColorStop(0, lastVal >= 0 ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)");
   grad.addColorStop(1, "rgba(0,0,0,0)");
 
   ctx.beginPath();
@@ -622,7 +657,7 @@ function renderEquityCurve(points) {
     else ctx.lineTo(x, y);
   });
   ctx.strokeStyle = lineColor;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.stroke();
 
   ctx.lineTo(toX(points.length - 1), height - padY);
@@ -631,23 +666,22 @@ function renderEquityCurve(points) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Points
   points.forEach((v, i) => {
     if (i === 0) return;
     ctx.beginPath();
-    ctx.arc(toX(i), toY(v), 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = v >= points[i - 1] ? "#10b981" : "#ef4444";
+    ctx.arc(toX(i), toY(v), 2.8, 0, Math.PI * 2);
+    ctx.fillStyle = v >= points[i - 1] ? "#22c55e" : "#ef4444";
     ctx.fill();
   });
 }
 
-function outcomeLabel(outcome) {
+function outcomeTag(outcome) {
   switch (outcome) {
-    case "TP": return `<span class="badge badge-green">✅ تارگت (TP)</span>`;
-    case "SL": return `<span class="badge badge-red">❌ استاپ (SL)</span>`;
-    case "MANUAL_PROFIT": return `<span class="badge badge-green">💰 سود دستی</span>`;
-    case "MANUAL_LOSS": return `<span class="badge badge-red">✂️ ضرر دستی</span>`;
-    case "BE": return `<span class="badge badge-gold">⚖️ سر به سر</span>`;
+    case "TP": return `<span class="tag tag-green">تارگت</span>`;
+    case "SL": return `<span class="tag tag-red">استاپ</span>`;
+    case "MANUAL_PROFIT": return `<span class="tag tag-green">سود دستی</span>`;
+    case "MANUAL_LOSS": return `<span class="tag tag-red">ضرر دستی</span>`;
+    case "BE": return `<span class="tag tag-gold">سر‌به‌سر</span>`;
     default: return escapeHtml(outcome);
   }
 }
@@ -656,37 +690,35 @@ function renderJournal() {
   const journal = getJournal();
   const stats = computeJournalStats(journal);
 
-  // KPIs
   document.getElementById("kpi-winrate").textContent = `${stats.winRate.toFixed(1)}%`;
-  document.getElementById("kpi-record").textContent = `${stats.wins} برد / ${stats.losses} باخت / ${stats.bes} سر‌به‌سر`;
+  document.getElementById("kpi-record").textContent = `${stats.wins}W / ${stats.losses}L / ${stats.bes}BE`;
 
   const pnlEl = document.getElementById("kpi-pnl");
   pnlEl.textContent = formatMoney(stats.netPnl);
-  pnlEl.className = `kpi-value mono ${stats.netPnl > 0 ? "text-green" : stats.netPnl < 0 ? "text-red" : ""}`;
-  document.getElementById("kpi-gross").textContent = `سود: $${stats.grossProfit.toFixed(1)} | ضرر: $${stats.grossLoss.toFixed(1)}`;
+  pnlEl.className = `metric-val mono ${stats.netPnl > 0 ? "text-green" : stats.netPnl < 0 ? "text-red" : ""}`;
+  document.getElementById("kpi-gross").textContent = `+$${stats.grossProfit.toFixed(1)} / -$${stats.grossLoss.toFixed(1)}`;
 
   document.getElementById("kpi-pf").textContent = stats.profitFactor >= 99 ? "∞" : stats.profitFactor.toFixed(2);
-  document.getElementById("kpi-avg-rr").textContent = `میانگین برد: $${stats.avgWin.toFixed(1)} | باخت: $${stats.avgLoss.toFixed(1)}`;
+  document.getElementById("kpi-avg-rr").textContent = `Avg +$${stats.avgWin.toFixed(1)} / -$${stats.avgLoss.toFixed(1)}`;
 
   document.getElementById("kpi-total").textContent = String(stats.total);
   document.getElementById("kpi-streak").textContent = `بیشترین برد پیاپی: ${stats.maxStreak}`;
 
   renderEquityCurve(stats.equityPoints);
 
-  // Breakdown
   const bdEl = document.getElementById("engine-breakdown");
   const engines = Object.entries(stats.byEngine);
   if (!engines.length) {
-    bdEl.innerHTML = `<div class="muted-sm">تفکیک وین‌ریت بر اساس موتورها پس از ثبت معامله نمایش داده می‌شود.</div>`;
+    bdEl.innerHTML = `<div class="muted">آمار تفکیکی موتورها پس از ثبت معامله نمایش داده می‌شود.</div>`;
   } else {
     bdEl.innerHTML = engines
       .map(([eng, info]) => {
         const dec = info.wins + info.losses;
         const wr = dec > 0 ? ((info.wins / dec) * 100).toFixed(0) : "0";
         return `
-          <div class="breakdown-card">
+          <div class="breakdown-item">
             <strong>${escapeHtml(eng)}</strong>
-            <span class="mono">WR: ${wr}% (${info.wins}W/${info.losses}L)</span>
+            <span class="mono muted">${wr}% (${info.wins}W/${info.losses}L)</span>
             <span class="mono ${info.pnl >= 0 ? "text-green" : "text-red"}">${formatMoney(info.pnl)}</span>
           </div>
         `;
@@ -694,7 +726,6 @@ function renderJournal() {
       .join("");
   }
 
-  // Table
   const filtered = journal.filter((t) => {
     const pnl = Number(t.pnl) || 0;
     if (currentFilter === "WIN") return pnl > 0 || t.outcome === "TP" || t.outcome === "MANUAL_PROFIT";
@@ -704,21 +735,21 @@ function renderJournal() {
 
   const tbody = document.getElementById("journal-tbody");
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="muted-sm" style="text-align:center;padding:1.2rem">معامله‌ای در این فیلتر ثبت نشده است.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:1.25rem">معامله‌ای ثبت نشده است.</td></tr>`;
   } else {
     tbody.innerHTML = filtered
       .map((t) => {
         const pnl = Number(t.pnl) || 0;
-        const dirBadge = t.direction === "BUY" ? `<span class="text-green">BUY</span>` : `<span class="text-red">SELL</span>`;
+        const dirTag = t.direction === "BUY" ? `<span class="text-green">BUY</span>` : `<span class="text-red">SELL</span>`;
         return `
           <tr>
-            <td class="mono muted-sm">${escapeHtml(t.dateLabel)}</td>
-            <td class="mono">${dirBadge}</td>
+            <td class="mono muted">${escapeHtml(t.dateLabel)}</td>
+            <td class="mono">${dirTag}</td>
             <td class="mono">${escapeHtml(t.engine)}</td>
-            <td>${outcomeLabel(t.outcome)}</td>
+            <td>${outcomeTag(t.outcome)}</td>
             <td class="mono ${pnl > 0 ? "text-green" : pnl < 0 ? "text-red" : ""}">${formatMoney(pnl)}</td>
-            <td title="${escapeHtml(t.note)}">${escapeHtml((t.note || "-").slice(0, 34))}</td>
-            <td><button class="btn btn-danger-ghost btn-xs" data-del-trade="${escapeHtml(t.id)}">حذف</button></td>
+            <td title="${escapeHtml(t.note)}">${escapeHtml((t.note || "-").slice(0, 30))}</td>
+            <td><button class="btn btn-danger btn-xs" data-del-trade="${escapeHtml(t.id)}">حذف</button></td>
           </tr>
         `;
       })
@@ -727,8 +758,7 @@ function renderJournal() {
     tbody.querySelectorAll("[data-del-trade]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-del-trade");
-        const next = getJournal().filter((x) => x.id !== id);
-        saveJournal(next);
+        saveJournal(getJournal().filter((x) => x.id !== id));
         renderJournal();
         if (dashboardData) renderBotSignals(dashboardData.signals || []);
       });
@@ -741,7 +771,6 @@ function setupTradeForm() {
   const outcomeSelect = document.getElementById("tf-outcome");
   const pnlInput = document.getElementById("tf-pnl");
 
-  // Quick outcome preset chips
   document.querySelectorAll("[data-preset]").forEach((chip) => {
     chip.addEventListener("click", () => {
       const preset = chip.getAttribute("data-preset");
@@ -763,24 +792,16 @@ function setupTradeForm() {
     const outcome = outcomeSelect.value;
     let pnlVal = Number(pnlInput.value || 0);
 
-    // Enforce intuitive sign based on selected outcome
     if ((outcome === "SL" || outcome === "MANUAL_LOSS") && pnlVal > 0) pnlVal = -pnlVal;
     if ((outcome === "TP" || outcome === "MANUAL_PROFIT") && pnlVal < 0) pnlVal = Math.abs(pnlVal);
     if (outcome === "BE") pnlVal = 0;
 
     const now = new Date();
-    const dateLabel = now.toLocaleString("fa-IR", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
     const entry = {
       id: `tr_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
       signalId: document.getElementById("tf-signal-id").value || null,
       createdAt: now.toISOString(),
-      dateLabel,
+      dateLabel: now.toLocaleString("fa-IR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
       direction: document.getElementById("tf-direction").value,
       engine: document.getElementById("tf-engine").value,
       outcome,
@@ -798,17 +819,15 @@ function setupTradeForm() {
     if (dashboardData) renderBotSignals(dashboardData.signals || []);
   });
 
-  // Filters
-  document.querySelectorAll("#journal-filter-btns .tf-btn").forEach((btn) => {
+  document.querySelectorAll("#journal-filter-btns .seg-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#journal-filter-btns .tf-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#journal-filter-btns .seg-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentFilter = btn.getAttribute("data-filter");
       renderJournal();
     });
   });
 
-  // Export JSON
   document.getElementById("btn-export-json").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(getJournal(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -817,7 +836,6 @@ function setupTradeForm() {
     a.click();
   });
 
-  // Export CSV
   document.getElementById("btn-export-csv").addEventListener("click", () => {
     const rows = [["Date", "Direction", "Engine", "Outcome", "PnL", "Note"]];
     getJournal().forEach((t) => {
@@ -831,19 +849,17 @@ function setupTradeForm() {
     a.click();
   });
 
-  // Import JSON
   document.getElementById("input-import-json").addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      const imported = JSON.parse(text);
-      if (!Array.isArray(imported)) throw new Error("Invalid format");
+      const imported = JSON.parse(await file.text());
+      if (!Array.isArray(imported)) throw new Error("Invalid");
       const current = getJournal();
       const seen = new Set(current.map((x) => x.id));
       const merged = [...current];
       imported.forEach((item) => {
-        if (item && item.id && !seen.has(item.id)) {
+        if (item?.id && !seen.has(item.id)) {
           merged.push(item);
           seen.add(item.id);
         }
@@ -858,9 +874,8 @@ function setupTradeForm() {
     e.target.value = "";
   });
 
-  // Clear all
   document.getElementById("btn-clear-journal").addEventListener("click", () => {
-    if (confirm("مطمئنی می‌خوای کل تاریخچه ژورنال رو پاک کنی؟ (بهتره قبلش خروجی JSON بگیری)")) {
+    if (confirm("کل تاریخچه ژورنال پاک شود؟")) {
       saveJournal([]);
       renderJournal();
       if (dashboardData) renderBotSignals(dashboardData.signals || []);
@@ -878,7 +893,6 @@ function setupLotCalculator() {
     const p = Math.max(0, Number(rPct.value) || 0);
     const s = Math.max(0.1, Number(sl.value) || 0.1);
     const riskUsd = b * (p / 100);
-    // Standard XAUUSD 1.00 lot = 100 oz ($100 per $1 move)
     const lot = riskUsd / (s * 100);
     document.getElementById("calc-lot-out").textContent = `${lot.toFixed(2)} Lot`;
     document.getElementById("calc-risk-usd").textContent = `$${riskUsd.toFixed(2)}`;
@@ -894,36 +908,33 @@ function setupLotCalculator() {
 function buildLiveAiContext() {
   const q = getEffectiveMarketPrice();
   const m = dashboardData?.market || {};
-  const journal = getJournal();
-  const stats = computeJournalStats(journal);
+  const stats = computeJournalStats(getJournal());
   const todayNews = (dashboardData?.news || []).filter((n) => n.is_today);
   const recentSignals = (dashboardData?.signals || []).slice(0, 5);
 
-  return `تو دستیار حرفه‌ای تریدر طلا (XAU/USD) هستی. به فارسی دقیق، کوتاه و کاربردی جواب بده.
-اعداد زیر دیتای واقعی و زنده از سیستم ما هستن؛ هرگز عددی رو حدس نزن و فقط بر اساس این دیتا (یا سرچ زنده در صورت فعال بودن) پاسخ بده:
+  return `تو دستیار تریدر طلا (XAU/USD) هستی. به فارسی دقیق، کوتاه و بدون حاشیه جواب بده. فقط به اعداد واقعی زیر استناد کن:
 
-[قیمت و وضعیت بازار]
-- قیمت لحظه‌ای XAU/USD: ${q ? `$${q.price} (${q.change_24h >= 0 ? "+" : ""}${q.change_24h}%, منبع: ${q.source})` : "نامشخص"}
-- آخرین آپدیت ربات: ${dashboardData?.updated_at_tehran || "--"} (تهران)
-- جهت کلان (HTF Bias): ${m.htf_bias || "--"} | وضعیت 1H: ${m.reason_1h || "--"}
+[بازار و قیمت]
+- قیمت XAU/USD: ${q ? `$${q.price} (${q.change_24h >= 0 ? "+" : ""}${q.change_24h}%, ${q.source})` : "نامشخص"}
+- آخرین آپدیت ربات: ${dashboardData?.updated_at_tehran || "--"} تهران
+- جهت کلان: ${m.htf_bias || "--"} | وضعیت 1H: ${m.reason_1h || "--"}
 - اندیکاتور 1H: ${JSON.stringify(m.indicators_1h || {})}
 - اندیکاتور 15M: ${JSON.stringify(m.indicators_15m || {})}
 
-[اخبار مهم USD امروز (ساعت تهران)]
-${todayNews.length ? todayNews.map((n) => `- ${n.tehran_time} | ${n.impact} | ${n.title} | پیش‌بینی:${n.forecast || "-"} قبلی:${n.previous || "-"} واقعی:${n.actual || "-"}`).join("\n") : "- خبر High/Medium ثبت‌شده‌ای برای امروز وجود ندارد."}
+[اخبار USD امروز]
+${todayNews.length ? todayNews.map((n) => `- ${n.tehran_time} | ${n.impact} | ${n.title} | پیش‌بینی:${n.forecast || "-"} قبلی:${n.previous || "-"} واقعی:${n.actual || "-"}`).join("\n") : "- خبر مهمی برای امروز ثبت نشده است."}
 
-[۵ سیگنال اخیر ربات]
-${recentSignals.length ? recentSignals.map((s) => `- ${s.timestamp_tehran} | ${s.direction} | ${s.strategy_name} (${s.timeframe}) | Entry:${s.entry} SL:${s.stop_loss} TP:${s.take_profit} RR:${s.rr_ratio} | وضعیت:${s.auto_outcome}`).join("\n") : "- هنوز سیگنالی ثبت نشده است."}
+[سیگنال‌های اخیر]
+${recentSignals.length ? recentSignals.map((s) => `- ${s.timestamp_tehran} | ${s.direction} | ${s.strategy_name} (${s.timeframe}) | E:${s.entry} SL:${s.stop_loss} TP:${s.take_profit} RR:${s.rr_ratio} | ${s.auto_outcome}`).join("\n") : "- سیگنالی ثبت نشده است."}
 
-[آمار ژورنال شخصی تریدر]
-- تعداد کل: ${stats.total} | برد: ${stats.wins} | باخت: ${stats.losses} | سر‌به‌سر: ${stats.bes}
-- وین‌ریت: ${stats.winRate.toFixed(1)}% | سود/ضرر خالص: ${formatMoney(stats.netPnl)} | Profit Factor: ${stats.profitFactor.toFixed(2)}`;
+[آمار ژورنال]
+- کل:${stats.total} | برد:${stats.wins} | باخت:${stats.losses} | WR:${stats.winRate.toFixed(1)}% | Net PnL:${formatMoney(stats.netPnl)} | PF:${stats.profitFactor.toFixed(2)}`;
 }
 
 async function callAiProvider(userPrompt) {
   const s = getSettings();
   if (!s.aiKey) {
-    return "⚠️ هنوز کلید AI رو وارد نکردی! از دکمه «کلید API» (یا ⚙️ تنظیمات) سرویس‌دهنده و API Key خودت رو وارد کن تا فقط توی مرورگر خودت ذخیره بشه.";
+    return "ابتدا از دکمه «کلید API» (یا تنظیمات) کلید سرویس‌دهنده AI خودت را وارد کن تا فقط در همین مرورگر ذخیره شود.";
   }
 
   const systemPrompt = buildLiveAiContext();
@@ -942,9 +953,7 @@ async function callAiProvider(userPrompt) {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents,
     };
-    if (s.geminiSearch) {
-      body.tools = [{ google_search: {} }];
-    }
+    if (s.geminiSearch) body.tools = [{ google_search: {} }];
 
     const res = await fetch(url, {
       method: "POST",
@@ -953,11 +962,9 @@ async function callAiProvider(userPrompt) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error?.message || `Gemini HTTP ${res.status}`);
-    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("\n");
-    return text || "پاسخی دریافت نشد.";
+    return data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("\n") || "پاسخی دریافت نشد.";
   }
 
-  // OpenAI-compatible (Groq, OpenRouter, OpenAI)
   const endpoint = s.aiEndpoint || PROVIDER_DEFAULTS[s.aiProvider]?.endpoint || "https://api.openai.com/v1/chat/completions";
   const model = s.aiModel || PROVIDER_DEFAULTS[s.aiProvider]?.model || "gpt-4o-mini";
   const messages = [
@@ -972,7 +979,7 @@ async function callAiProvider(userPrompt) {
   };
   if (s.aiProvider === "openrouter") {
     headers["HTTP-Referer"] = window.location.origin;
-    headers["X-Title"] = "Gold AI Terminal";
+    headers["X-Title"] = "Gold Terminal";
   }
 
   const res = await fetch(endpoint, {
@@ -1016,20 +1023,20 @@ function setupAiChatbot() {
   document.getElementById("ai-btn-clear").addEventListener("click", () => {
     chatHistory = [];
     document.getElementById("ai-messages").innerHTML =
-      `<div class="ai-msg bot">چت پاک شد. هر سوالی درباره قیمت لحظه‌ای، اخبار یا ژورنالت داری بپرس! ✨</div>`;
+      `<div class="ai-msg bot">چت پاک شد. سوالت رو بپرس.</div>`;
   });
 
   const sendPrompt = async (q) => {
     const trimmed = q.trim();
     if (!trimmed) return;
     appendChatMessage("user", trimmed);
-    const loadingEl = appendChatMessage("bot", "در حال بررسی دیتای زنده و پاسخ...");
+    const loadingEl = appendChatMessage("bot", "در حال بررسی...");
     try {
       const reply = await callAiProvider(trimmed);
       loadingEl.textContent = reply;
       chatHistory.push({ role: "user", text: trimmed }, { role: "bot", text: reply });
     } catch (err) {
-      loadingEl.textContent = `❌ خطا در اتصال به AI: ${err.message}`;
+      loadingEl.textContent = `خطا: ${err.message}`;
     }
   };
 
@@ -1101,7 +1108,6 @@ function setupSettingsModal() {
       const nextHash = await sha256Hex(`${newUser}:${newPass}`);
       localStorage.setItem(STORAGE_KEYS.AUTH_HASH, nextHash);
       localStorage.setItem(STORAGE_KEYS.SESSION, nextHash);
-      alert("تنظیمات و رمز ورود جدید با موفقیت ذخیره شد.");
     }
 
     document.getElementById("ai-provider-label").textContent =
@@ -1117,10 +1123,12 @@ function initDashboard() {
   if (initialized) return;
   initialized = true;
 
+  setupNavigationAndRail();
   renderTradingView("15");
-  document.querySelectorAll("#tv-tf-buttons .tf-btn").forEach((btn) => {
+
+  document.querySelectorAll("#tv-tf-buttons .seg-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#tv-tf-buttons .tf-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#tv-tf-buttons .seg-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       renderTradingView(btn.getAttribute("data-tf"));
     });
@@ -1153,7 +1161,9 @@ function initDashboard() {
   fetchLiveBrowserPrice();
   setInterval(fetchLiveBrowserPrice, 15000);
   setInterval(fetchBotData, 60000);
-  window.addEventListener("resize", () => renderJournal());
+  window.addEventListener("resize", () => {
+    if (activeView === "journal") renderJournal();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", setupLogin);
