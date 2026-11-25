@@ -22,6 +22,11 @@ on:
           - wakeup
           - sleep
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -40,10 +45,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Restore scanner state (dedup & cooldown)
+      - name: Restore scanner state & dashboard history
         uses: actions/cache/restore@v4
         with:
-          path: state.json
+          path: |
+            state.json
+            dashboard_history.json
           key: bot-state-${{ github.run_id }}
           restore-keys: |
             bot-state-
@@ -71,9 +78,30 @@ jobs:
             python scan_once.py
           fi
 
-      - name: Save scanner state
+      - name: Save scanner state & dashboard history
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: state.json
+          path: |
+            state.json
+            dashboard_history.json
           key: bot-state-${{ github.run_id }}
+
+      - name: Upload Pages artifact
+        if: success()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+  deploy_dashboard:
+    needs: scan
+    if: success()
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

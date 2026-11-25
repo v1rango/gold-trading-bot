@@ -21,6 +21,7 @@ logger = logging.getLogger("scanner")
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS, TIMEZONE, START_HOUR
 from data.gold import get_gold_price
+from data.dashboard_export import refresh_dashboard_from_cache
 from strategies.multi_engine import load_state, save_state
 from strategies.scan_runner import run_gold_scan
 from bot.telegram_bot import TelegramBot
@@ -41,14 +42,26 @@ def _run_auto_mode(bot: TelegramBot) -> None:
             bot.send_message(format_sleep_message(price), reply_markup=bot.get_main_keyboard())
             state["last_sleep_date"] = today_str
             save_state(state)
+            try:
+                refresh_dashboard_from_cache(price)
+            except Exception as e:
+                logger.warning(f"Dashboard refresh warning: {e}")
             logger.info("Auto-cron: Goodnight message sent.")
         else:
             logger.info("Auto-cron: Goodnight already sent today; outside active hours.")
+            try:
+                refresh_dashboard_from_cache()
+            except Exception:
+                pass
         return
 
     # 2. Skip weekends (Sat/Sun) and overnight hours (00:26 - 09:59 Tehran)
     if wd in (5, 6) or now.hour < START_HOUR:
         logger.info(f"Auto-cron: Outside active market window ({now.strftime('%a %H:%M Tehran')}).")
+        try:
+            refresh_dashboard_from_cache()
+        except Exception:
+            pass
         return
 
     # 3. Morning wakeup check (10:00 - 10:25 Tehran, Mon-Fri)

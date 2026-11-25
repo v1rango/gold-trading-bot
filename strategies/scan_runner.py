@@ -13,6 +13,7 @@ from strategies.multi_engine import (
 )
 from bot.telegram_bot import TelegramBot
 from bot.formatter import format_signal, format_manual_status, format_wakeup_message
+from data.dashboard_export import export_dashboard_snapshot
 
 logger = logging.getLogger("scanner")
 
@@ -49,6 +50,7 @@ def run_gold_scan(
     if state is None:
         state = load_state()
     sent_any = False
+    emitted_signals = []
 
     for sig in candidates:
         if is_manual:
@@ -68,11 +70,27 @@ def run_gold_scan(
         if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id):
             if not is_manual:
                 record_signal(sig, state)
+            emitted_signals.append(sig)
             sent_any = True
             if is_manual:
                 break
 
     save_state(state)
+
+    try:
+        export_dashboard_snapshot(
+            price=price,
+            df4h=df4h,
+            df1h=df1h,
+            df15m=df15m,
+            df5m=df5m,
+            htf_bias=htf_bias,
+            htf_text=htf_text,
+            reason_1h=reason_1h,
+            emitted_signals=emitted_signals,
+        )
+    except Exception as e:
+        logger.warning(f"Dashboard export warning (non-fatal): {e}")
 
     if not sent_any and is_manual:
         status_msg = format_manual_status(price, df1h.iloc[-1], reason_1h, htf_bias=htf_text)

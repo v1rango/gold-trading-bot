@@ -1,0 +1,66 @@
+name: Deploy Dashboard Static UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/deploy_dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Restore dashboard history if present
+        uses: actions/cache/restore@v4
+        with:
+          path: dashboard_history.json
+          key: bot-state-push-${{ github.run_id }}
+          restore-keys: |
+            bot-state-
+
+      - name: Refresh dashboard JSON from cached history
+        run: |
+          python3 -c "
+          import json, os, pathlib
+          p = pathlib.Path('dashboard/data/dashboard_data.json')
+          if os.path.exists('dashboard_history.json'):
+              with open('dashboard_history.json', 'r', encoding='utf-8') as f:
+                  h = json.load(f)
+              out = {
+                  'updated_at_utc': h.get('news_updated_utc', ''),
+                  'updated_at_tehran': h.get('updated_at_tehran', ''),
+                  'market': h.get('market', {}),
+                  'signals': h.get('signals', []),
+                  'news': h.get('news', []),
+              }
+              p.parent.mkdir(parents=True, exist_ok=True)
+              with open(p, 'w', encoding='utf-8') as wf:
+                  json.dump(out, wf, ensure_ascii=False, indent=2)
+          "
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

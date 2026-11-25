@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 bot.log
 state.json
+dashboard_history.json
 .DS_Store
