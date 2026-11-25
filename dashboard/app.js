@@ -1,4 +1,4 @@
-/* Gold Terminal — Minimalist XAU/USD Workspace */
+/* XAU/USD Minimal Pro Terminal */
 
 const DEFAULT_AUTH_HASH = "9b3d275b0c617fae57e3e5bf9270181ac952904ac6575f3f79c9740a459b75f7";
 
@@ -7,7 +7,6 @@ const STORAGE_KEYS = {
   SESSION: "gold_dash_session",
   JOURNAL: "gold_dash_journal_v1",
   SETTINGS: "gold_dash_settings_v1",
-  THEME: "gold_dash_theme",
 };
 
 const PROVIDER_DEFAULTS = {
@@ -23,6 +22,7 @@ let currentFilter = "ALL";
 let currentChartTf = "15";
 let activeView = "terminal";
 let chatHistory = [];
+let initialized = false;
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
@@ -156,30 +156,11 @@ function formatMoney(num) {
   return `${sign}$${Math.abs(n).toFixed(2)}`;
 }
 
-// ─── Theme & Navigation ─────────────────────────────────────────────────────
-
-function getTheme() {
-  return localStorage.getItem(STORAGE_KEYS.THEME) || "dark";
-}
-
-function applyTheme(theme, reloadChart = false) {
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem(STORAGE_KEYS.THEME, theme);
-  const sun = document.getElementById("theme-icon-sun");
-  const moon = document.getElementById("theme-icon-moon");
-  if (sun && moon) {
-    sun.classList.toggle("hidden", theme === "light");
-    moon.classList.toggle("hidden", theme === "dark");
-  }
-  if (reloadChart && initialized) {
-    renderTradingView(currentChartTf);
-    renderJournal();
-  }
-}
+// ─── Navigation ─────────────────────────────────────────────────────────────
 
 function switchView(viewName) {
   activeView = viewName;
-  document.querySelectorAll(".nav-tab").forEach((b) => {
+  document.querySelectorAll(".hdr-tab").forEach((b) => {
     b.classList.toggle("active", b.getAttribute("data-view") === viewName);
   });
   document.getElementById("view-terminal").classList.toggle("hidden", viewName !== "terminal");
@@ -190,27 +171,23 @@ function switchView(viewName) {
 }
 
 function setupNavigationAndRail() {
-  document.querySelectorAll(".nav-tab").forEach((btn) => {
+  document.querySelectorAll(".hdr-tab").forEach((btn) => {
     btn.addEventListener("click", () => switchView(btn.getAttribute("data-view")));
   });
 
-  document.querySelectorAll("#rail-tabs .seg-btn").forEach((btn) => {
+  document.querySelectorAll("#rail-tabs .rail-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.getAttribute("data-rail");
-      document.querySelectorAll("#rail-tabs .seg-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#rail-tabs .rail-tab").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       ["signals", "indicators", "news"].forEach((name) => {
         document.getElementById(`rail-${name}`).classList.toggle("hidden", name !== target);
       });
     });
   });
-
-  document.getElementById("btn-theme").addEventListener("click", () => {
-    applyTheme(getTheme() === "dark" ? "light" : "dark", true);
-  });
 }
 
-// ─── Auth / Login ───────────────────────────────────────────────────────────
+// ─── Auth ───────────────────────────────────────────────────────────────────
 
 function isLoggedIn() {
   const hash = localStorage.getItem(STORAGE_KEYS.AUTH_HASH) || DEFAULT_AUTH_HASH;
@@ -228,7 +205,6 @@ function showApp() {
 }
 
 function setupLogin() {
-  applyTheme(getTheme(), false);
   if (isLoggedIn()) {
     showApp();
     return;
@@ -261,10 +237,9 @@ function renderTradingView(tf = currentChartTf) {
   currentChartTf = tf;
   const container = document.getElementById("tv-chart-container");
   container.innerHTML = "";
-  const theme = getTheme();
 
   if (typeof TradingView === "undefined" || !TradingView.widget) {
-    container.innerHTML = `<div class="muted" style="padding:2rem;text-align:center">امکان لود چارت TradingView وجود ندارد.</div>`;
+    container.innerHTML = `<div class="muted" style="padding:2rem;text-align:center">TradingView chart unavailable.</div>`;
     return;
   }
 
@@ -273,7 +248,7 @@ function renderTradingView(tf = currentChartTf) {
     symbol: "OANDA:XAUUSD",
     interval: tf,
     timezone: "Asia/Tehran",
-    theme,
+    theme: "dark",
     style: "1",
     locale: "en",
     enable_publishing: false,
@@ -281,12 +256,24 @@ function renderTradingView(tf = currentChartTf) {
     hide_legend: false,
     save_image: false,
     container_id: "tv-chart-container",
-    backgroundColor: theme === "dark" ? "#111114" : "#ffffff",
-    gridColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.05)",
+    backgroundColor: "#050608",
+    gridColor: "#141820",
+    overrides: {
+      "paneProperties.background": "#050608",
+      "paneProperties.backgroundType": "solid",
+      "paneProperties.vertGridProperties.color": "#141820",
+      "paneProperties.horzGridProperties.color": "#141820",
+      "mainSeriesProperties.candleStyle.upColor": "#0ecb81",
+      "mainSeriesProperties.candleStyle.downColor": "#f6465d",
+      "mainSeriesProperties.candleStyle.borderUpColor": "#0ecb81",
+      "mainSeriesProperties.candleStyle.borderDownColor": "#f6465d",
+      "mainSeriesProperties.candleStyle.wickUpColor": "#0ecb81",
+      "mainSeriesProperties.candleStyle.wickDownColor": "#f6465d",
+    },
   });
 }
 
-// ─── Data Loading & Live Price ──────────────────────────────────────────────
+// ─── Data Fetching & Rendering ──────────────────────────────────────────────
 
 async function fetchBotData() {
   try {
@@ -316,7 +303,7 @@ async function fetchLiveBrowserPrice() {
       liveBrowserQuote = {
         price: Number(row[0]),
         change_24h: Number(row[1] || 0),
-        source: "Live 15s",
+        source: "LIVE",
       };
       renderLiveHeaderPrice();
     }
@@ -332,7 +319,7 @@ function getEffectiveMarketPrice() {
     return {
       price: Number(m.price),
       change_24h: Number(m.change_24h || 0),
-      source: "Bot 5m",
+      source: "5M",
     };
   }
   return null;
@@ -342,13 +329,15 @@ function renderLiveHeaderPrice() {
   const q = getEffectiveMarketPrice();
   if (!q) return;
 
-  document.getElementById("live-price").textContent =
-    `$${q.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
   const chg = Number(q.change_24h || 0);
+  const priceEl = document.getElementById("live-price");
+  priceEl.textContent = `$${q.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  priceEl.className = `mono ticker-val ${chg >= 0 ? "text-bull" : "text-bear"}`;
+
   const chgEl = document.getElementById("live-change");
   chgEl.textContent = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`;
-  chgEl.className = `mono tag ${chg >= 0 ? "tag-green" : "tag-red"}`;
+  chgEl.className = `mono ticker-chg ${chg >= 0 ? "text-bull" : "text-bear"}`;
+
   document.getElementById("live-feed-badge").textContent = q.source;
 }
 
@@ -362,8 +351,8 @@ function renderBotSnapshot() {
   const biasEl = document.getElementById("htf-bias-badge");
   const bias = m.htf_bias || "NEUTRAL";
   biasEl.textContent =
-    bias === "BULLISH" ? "روند کلان: صعودی" : bias === "BEARISH" ? "روند کلان: نزولی" : "روند کلان: خنثی";
-  biasEl.className = `tag ${bias === "BULLISH" ? "tag-green" : bias === "BEARISH" ? "tag-red" : "tag-gold"}`;
+    bias === "BULLISH" ? "MACRO BULL" : bias === "BEARISH" ? "MACRO BEAR" : "MACRO NEUTRAL";
+  biasEl.className = `mono bias-ind ${bias === "BULLISH" ? "text-bull" : bias === "BEARISH" ? "text-bear" : "muted"}`;
 
   const i1h = m.indicators_1h || {};
   const i15 = m.indicators_15m || {};
@@ -384,8 +373,7 @@ function renderBotSnapshot() {
     .map(([k, v]) => `<div class="kv-row"><span class="muted">${escapeHtml(k)}</span><strong class="mono">${escapeHtml(v)}</strong></div>`)
     .join("");
 
-  document.getElementById("bot-reason-box").textContent =
-    m.reason_1h || "منتظر اسکن بعدی ربات...";
+  document.getElementById("bot-reason-box").textContent = m.reason_1h || "در انتظار اسکن بعدی...";
 
   renderNews(dashboardData.news || []);
   renderBotSignals(dashboardData.signals || []);
@@ -394,7 +382,7 @@ function renderBotSnapshot() {
 function renderNews(news) {
   const el = document.getElementById("news-list");
   if (!news.length) {
-    el.innerHTML = `<div class="muted" style="padding:1rem 0;text-align:center">خبر USD مهمی برای نمایش وجود ندارد.</div>`;
+    el.innerHTML = `<div class="muted" style="padding:20px;text-align:center">خبر USD مهمی وجود ندارد.</div>`;
     return;
   }
 
@@ -407,24 +395,24 @@ function renderNews(news) {
     .map((ev) => {
       const impactTag =
         ev.impact === "High"
-          ? `<span class="tag tag-red">High</span>`
-          : `<span class="tag tag-gold">Med</span>`;
-      const todayTag = ev.is_today ? `<span class="tag tag-green">امروز</span>` : "";
+          ? `<span class="tag tag-bear mono">HIGH</span>`
+          : `<span class="tag tag-muted mono">MED</span>`;
+      const todayTag = ev.is_today ? `<span class="tag tag-bull">امروز</span>` : "";
       const meta = [
-        ev.forecast ? `Fc: ${ev.forecast}` : "",
-        ev.previous ? `Prev: ${ev.previous}` : "",
-        ev.actual ? `Act: ${ev.actual}` : "",
+        ev.forecast ? `Fc:${ev.forecast}` : "",
+        ev.previous ? `Pr:${ev.previous}` : "",
+        ev.actual ? `Ac:${ev.actual}` : "",
       ]
         .filter(Boolean)
-        .join(" • ");
+        .join(" ");
 
       return `
-        <div class="news-row ${ev.is_today ? "today" : ""}">
+        <div class="news-item ${ev.is_today ? "today" : ""}">
           <div>
-            <div><strong>${escapeHtml(ev.title)}</strong></div>
-            <div class="muted mono">${escapeHtml(ev.tehran_date)} ${escapeHtml(ev.tehran_time)}${meta ? ` — ${escapeHtml(meta)}` : ""}</div>
+            <div style="font-weight:600;font-size:12px">${escapeHtml(ev.title)}</div>
+            <div class="muted mono">${escapeHtml(ev.tehran_date)} ${escapeHtml(ev.tehran_time)}${meta ? ` • ${escapeHtml(meta)}` : ""}</div>
           </div>
-          <div class="row-gap">${todayTag}${impactTag}</div>
+          <div class="row-xs">${todayTag}${impactTag}</div>
         </div>
       `;
     })
@@ -436,7 +424,7 @@ function renderBotSignals(signals) {
   document.getElementById("signals-count-badge").textContent = String(signals.length);
 
   if (!signals.length) {
-    el.innerHTML = `<div class="muted" style="padding:1.5rem 0;text-align:center">هنوز سیگنالی ثبت نشده است. معاملات شخصی را می‌توانید در تب «ژورنال و وین‌ریت» ثبت کنید.</div>`;
+    el.innerHTML = `<div class="muted" style="padding:22px 12px;text-align:center">سیگنال جدیدی ثبت نشده. معاملات شخصی را در تب ژورنال ثبت کنید.</div>`;
     return;
   }
 
@@ -446,40 +434,40 @@ function renderBotSignals(signals) {
     .map((s) => {
       const dirTag =
         s.direction === "BUY"
-          ? `<span class="tag tag-green mono">BUY</span>`
-          : `<span class="tag tag-red mono">SELL</span>`;
+          ? `<span class="tag tag-bull mono">BUY</span>`
+          : `<span class="tag tag-bear mono">SELL</span>`;
 
-      let autoTag = `<span class="tag tag-neutral">باز</span>`;
-      if (s.auto_outcome === "TP_HIT") autoTag = `<span class="tag tag-green">سیستم: TP</span>`;
-      if (s.auto_outcome === "SL_HIT") autoTag = `<span class="tag tag-red">سیستم: SL</span>`;
+      let autoTag = "";
+      if (s.auto_outcome === "TP_HIT") autoTag = `<span class="tag tag-bull mono">TP</span>`;
+      if (s.auto_outcome === "SL_HIT") autoTag = `<span class="tag tag-bear mono">SL</span>`;
 
-      const loggedTag = loggedIds.has(s.id) ? `<span class="tag tag-gold">ثبت‌شده</span>` : "";
+      const loggedTag = loggedIds.has(s.id) ? `<span class="tag tag-muted">ثبت‌شده</span>` : "";
 
       return `
-        <div class="sig-item">
-          <div class="sig-head">
-            <div class="row-gap">
+        <div class="sig-row">
+          <div class="sig-top">
+            <div class="row-xs">
               ${dirTag}
-              <strong style="font-size:0.82rem">${escapeHtml(s.strategy_name)}</strong>
+              <strong style="font-size:12px">${escapeHtml(s.strategy_name)}</strong>
             </div>
-            <div class="row-gap">
+            <div class="row-xs">
               ${autoTag}
               ${loggedTag}
               <span class="muted mono">${escapeHtml(s.timestamp_tehran)}</span>
             </div>
           </div>
-          <div class="sig-prices mono">
-            <div><span class="muted">Entry</span><strong>$${escapeHtml(s.entry)}</strong></div>
-            <div><span class="muted">SL</span><strong class="text-red">$${escapeHtml(s.stop_loss)}</strong></div>
-            <div><span class="muted">TP</span><strong class="text-green">$${escapeHtml(s.take_profit)}</strong></div>
-            <div><span class="muted">R:R</span><strong class="text-gold">1:${escapeHtml(s.rr_ratio)}</strong></div>
+          <div class="sig-lvl mono">
+            <div><span class="muted">IN</span><span>$${escapeHtml(s.entry)}</span></div>
+            <div><span class="muted">SL</span><span class="text-bear">$${escapeHtml(s.stop_loss)}</span></div>
+            <div><span class="muted">TP</span><span class="text-bull">$${escapeHtml(s.take_profit)}</span></div>
+            <div><span class="muted">R:R</span><span>1:${escapeHtml(s.rr_ratio)}</span></div>
           </div>
-          <div class="sig-btns">
-            <button class="outcome-pill win" data-sig-action="TP" data-sig-id="${escapeHtml(s.id)}">تارگت</button>
-            <button class="outcome-pill loss" data-sig-action="SL" data-sig-id="${escapeHtml(s.id)}">استاپ</button>
-            <button class="outcome-pill win" data-sig-action="MANUAL_PROFIT" data-sig-id="${escapeHtml(s.id)}">سود دستی</button>
-            <button class="outcome-pill loss" data-sig-action="MANUAL_LOSS" data-sig-id="${escapeHtml(s.id)}">ضرر دستی</button>
-            <button class="outcome-pill be" data-sig-action="BE" data-sig-id="${escapeHtml(s.id)}">سر به سر</button>
+          <div class="sig-act-row">
+            <button class="mini-act w" data-sig-action="TP" data-sig-id="${escapeHtml(s.id)}">تارگت</button>
+            <button class="mini-act l" data-sig-action="SL" data-sig-id="${escapeHtml(s.id)}">استاپ</button>
+            <button class="mini-act w" data-sig-action="MANUAL_PROFIT" data-sig-id="${escapeHtml(s.id)}">+ سود دستی</button>
+            <button class="mini-act l" data-sig-action="MANUAL_LOSS" data-sig-id="${escapeHtml(s.id)}">- ضرر دستی</button>
+            <button class="mini-act n" data-sig-action="BE" data-sig-id="${escapeHtml(s.id)}">BE</button>
           </div>
         </div>
       `;
@@ -496,6 +484,20 @@ function renderBotSignals(signals) {
   });
 }
 
+function setDirectionState(dir) {
+  document.getElementById("tf-direction").value = dir;
+  document.querySelectorAll("#dir-switch .dir-btn").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-dir") === dir);
+  });
+}
+
+function setOutcomeState(outcome) {
+  document.getElementById("tf-outcome").value = outcome;
+  document.querySelectorAll("#outcome-grid .out-btn").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-preset") === outcome);
+  });
+}
+
 function handleSignalQuickAction(sig, action) {
   const settings = getSettings();
   const baseRisk = settings.defaultRisk || 10;
@@ -509,9 +511,9 @@ function handleSignalQuickAction(sig, action) {
   switchView("journal");
 
   document.getElementById("tf-signal-id").value = sig.id;
-  document.getElementById("tf-direction").value = sig.direction;
+  setDirectionState(sig.direction);
   document.getElementById("tf-engine").value = engineValue;
-  document.getElementById("tf-outcome").value = action;
+  setOutcomeState(action);
   document.getElementById("tf-note").value = `${sig.strategy_name} (${sig.entry})`;
 
   const pnlInput = document.getElementById("tf-pnl");
@@ -524,7 +526,7 @@ function handleSignalQuickAction(sig, action) {
   }
 }
 
-// ─── Trade Journal, Analytics & Equity Curve ────────────────────────────────
+// ─── Journal Analytics & Equity Curve ───────────────────────────────────────
 
 function computeJournalStats(journal) {
   const total = journal.length;
@@ -603,8 +605,8 @@ function renderEquityCurve(points) {
 
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  const width = Math.max(240, parentWidth - 16);
-  const height = 170;
+  const width = Math.max(240, parentWidth - 28);
+  const height = 165;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
   canvas.style.width = `${width}px`;
@@ -612,20 +614,16 @@ function renderEquityCurve(points) {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
 
-  const isLight = getTheme() === "light";
-  const mutedColor = isLight ? "#71717a" : "#71717a";
-  const gridColor = isLight ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)";
-
   if (!points || points.length < 2) {
-    ctx.fillStyle = mutedColor;
+    ctx.fillStyle = "#76808f";
     ctx.font = "12px Vazirmatn, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("پس از ثبت اولین معامله، منحنی رشد سرمایه اینجا نمایش داده می‌شود.", width / 2, height / 2);
+    ctx.fillText("پس از ثبت اولین معامله، نمودار رشد سرمایه اینجا رسم می‌شود.", width / 2, height / 2);
     return;
   }
 
-  const padX = 14;
-  const padY = 18;
+  const padX = 12;
+  const padY = 16;
   const minVal = Math.min(...points, 0);
   const maxVal = Math.max(...points, 0);
   const span = maxVal - minVal || 1;
@@ -634,7 +632,7 @@ function renderEquityCurve(points) {
   const toY = (v) => height - padY - ((v - minVal) / span) * (height - padY * 2);
 
   const zeroY = toY(0);
-  ctx.strokeStyle = gridColor;
+  ctx.strokeStyle = "#1b2029";
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(padX, zeroY);
@@ -643,11 +641,11 @@ function renderEquityCurve(points) {
   ctx.setLineDash([]);
 
   const lastVal = points[points.length - 1];
-  const lineColor = lastVal >= 0 ? "#22c55e" : "#ef4444";
+  const lineColor = lastVal >= 0 ? "#0ecb81" : "#f6465d";
 
   const grad = ctx.createLinearGradient(0, 0, 0, height);
-  grad.addColorStop(0, lastVal >= 0 ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
+  grad.addColorStop(0, lastVal >= 0 ? "rgba(14,203,129,0.22)" : "rgba(246,70,93,0.22)");
+  grad.addColorStop(1, "rgba(5,6,8,0)");
 
   ctx.beginPath();
   points.forEach((v, i) => {
@@ -669,19 +667,19 @@ function renderEquityCurve(points) {
   points.forEach((v, i) => {
     if (i === 0) return;
     ctx.beginPath();
-    ctx.arc(toX(i), toY(v), 2.8, 0, Math.PI * 2);
-    ctx.fillStyle = v >= points[i - 1] ? "#22c55e" : "#ef4444";
+    ctx.arc(toX(i), toY(v), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = v >= points[i - 1] ? "#0ecb81" : "#f6465d";
     ctx.fill();
   });
 }
 
 function outcomeTag(outcome) {
   switch (outcome) {
-    case "TP": return `<span class="tag tag-green">تارگت</span>`;
-    case "SL": return `<span class="tag tag-red">استاپ</span>`;
-    case "MANUAL_PROFIT": return `<span class="tag tag-green">سود دستی</span>`;
-    case "MANUAL_LOSS": return `<span class="tag tag-red">ضرر دستی</span>`;
-    case "BE": return `<span class="tag tag-gold">سر‌به‌سر</span>`;
+    case "TP": return `<span class="tag tag-bull">TP</span>`;
+    case "SL": return `<span class="tag tag-bear">SL</span>`;
+    case "MANUAL_PROFIT": return `<span class="tag tag-bull">سود دستی</span>`;
+    case "MANUAL_LOSS": return `<span class="tag tag-bear">ضرر دستی</span>`;
+    case "BE": return `<span class="tag tag-muted">BE</span>`;
     default: return escapeHtml(outcome);
   }
 }
@@ -690,36 +688,38 @@ function renderJournal() {
   const journal = getJournal();
   const stats = computeJournalStats(journal);
 
-  document.getElementById("kpi-winrate").textContent = `${stats.winRate.toFixed(1)}%`;
+  const wrEl = document.getElementById("kpi-winrate");
+  wrEl.textContent = `${stats.winRate.toFixed(1)}%`;
+  wrEl.className = `mono tel-val ${stats.winRate >= 50 ? "text-bull" : stats.total ? "text-bear" : ""}`;
   document.getElementById("kpi-record").textContent = `${stats.wins}W / ${stats.losses}L / ${stats.bes}BE`;
 
   const pnlEl = document.getElementById("kpi-pnl");
   pnlEl.textContent = formatMoney(stats.netPnl);
-  pnlEl.className = `metric-val mono ${stats.netPnl > 0 ? "text-green" : stats.netPnl < 0 ? "text-red" : ""}`;
+  pnlEl.className = `mono tel-val ${stats.netPnl > 0 ? "text-bull" : stats.netPnl < 0 ? "text-bear" : ""}`;
   document.getElementById("kpi-gross").textContent = `+$${stats.grossProfit.toFixed(1)} / -$${stats.grossLoss.toFixed(1)}`;
 
   document.getElementById("kpi-pf").textContent = stats.profitFactor >= 99 ? "∞" : stats.profitFactor.toFixed(2);
   document.getElementById("kpi-avg-rr").textContent = `Avg +$${stats.avgWin.toFixed(1)} / -$${stats.avgLoss.toFixed(1)}`;
 
   document.getElementById("kpi-total").textContent = String(stats.total);
-  document.getElementById("kpi-streak").textContent = `بیشترین برد پیاپی: ${stats.maxStreak}`;
+  document.getElementById("kpi-streak").textContent = `Streak: ${stats.maxStreak}`;
 
   renderEquityCurve(stats.equityPoints);
 
   const bdEl = document.getElementById("engine-breakdown");
   const engines = Object.entries(stats.byEngine);
   if (!engines.length) {
-    bdEl.innerHTML = `<div class="muted">آمار تفکیکی موتورها پس از ثبت معامله نمایش داده می‌شود.</div>`;
+    bdEl.innerHTML = "";
   } else {
     bdEl.innerHTML = engines
       .map(([eng, info]) => {
         const dec = info.wins + info.losses;
         const wr = dec > 0 ? ((info.wins / dec) * 100).toFixed(0) : "0";
         return `
-          <div class="breakdown-item">
-            <strong>${escapeHtml(eng)}</strong>
+          <div class="bd-cell">
+            <strong class="mono">${escapeHtml(eng)}</strong>
             <span class="mono muted">${wr}% (${info.wins}W/${info.losses}L)</span>
-            <span class="mono ${info.pnl >= 0 ? "text-green" : "text-red"}">${formatMoney(info.pnl)}</span>
+            <span class="mono ${info.pnl >= 0 ? "text-bull" : "text-bear"}">${formatMoney(info.pnl)}</span>
           </div>
         `;
       })
@@ -735,21 +735,21 @@ function renderJournal() {
 
   const tbody = document.getElementById("journal-tbody");
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:1.25rem">معامله‌ای ثبت نشده است.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">معامله‌ای ثبت نشده است.</td></tr>`;
   } else {
     tbody.innerHTML = filtered
       .map((t) => {
         const pnl = Number(t.pnl) || 0;
-        const dirTag = t.direction === "BUY" ? `<span class="text-green">BUY</span>` : `<span class="text-red">SELL</span>`;
+        const dirTag = t.direction === "BUY" ? `<span class="text-bull">BUY</span>` : `<span class="text-bear">SELL</span>`;
         return `
           <tr>
             <td class="mono muted">${escapeHtml(t.dateLabel)}</td>
             <td class="mono">${dirTag}</td>
             <td class="mono">${escapeHtml(t.engine)}</td>
             <td>${outcomeTag(t.outcome)}</td>
-            <td class="mono ${pnl > 0 ? "text-green" : pnl < 0 ? "text-red" : ""}">${formatMoney(pnl)}</td>
-            <td title="${escapeHtml(t.note)}">${escapeHtml((t.note || "-").slice(0, 30))}</td>
-            <td><button class="btn btn-danger btn-xs" data-del-trade="${escapeHtml(t.id)}">حذف</button></td>
+            <td class="mono ${pnl > 0 ? "text-bull" : pnl < 0 ? "text-bear" : ""}">${formatMoney(pnl)}</td>
+            <td title="${escapeHtml(t.note)}">${escapeHtml((t.note || "-").slice(0, 28))}</td>
+            <td><button class="btn-ghost danger" data-del-trade="${escapeHtml(t.id)}">حذف</button></td>
           </tr>
         `;
       })
@@ -768,13 +768,16 @@ function renderJournal() {
 
 function setupTradeForm() {
   const form = document.getElementById("trade-form");
-  const outcomeSelect = document.getElementById("tf-outcome");
   const pnlInput = document.getElementById("tf-pnl");
 
-  document.querySelectorAll("[data-preset]").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const preset = chip.getAttribute("data-preset");
-      outcomeSelect.value = preset;
+  document.querySelectorAll("#dir-switch .dir-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setDirectionState(btn.getAttribute("data-dir")));
+  });
+
+  document.querySelectorAll("#outcome-grid .out-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.getAttribute("data-preset");
+      setOutcomeState(preset);
       const risk = getSettings().defaultRisk || 10;
       if (preset === "BE") pnlInput.value = "0";
       else if (preset === "SL" && !pnlInput.value) pnlInput.value = (-risk).toFixed(2);
@@ -783,13 +786,9 @@ function setupTradeForm() {
     });
   });
 
-  outcomeSelect.addEventListener("change", () => {
-    if (outcomeSelect.value === "BE") pnlInput.value = "0";
-  });
-
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const outcome = outcomeSelect.value;
+    const outcome = document.getElementById("tf-outcome").value;
     let pnlVal = Number(pnlInput.value || 0);
 
     if ((outcome === "SL" || outcome === "MANUAL_LOSS") && pnlVal > 0) pnlVal = -pnlVal;
@@ -815,13 +814,15 @@ function setupTradeForm() {
 
     form.reset();
     document.getElementById("tf-signal-id").value = "";
+    setDirectionState("BUY");
+    setOutcomeState("TP");
     renderJournal();
     if (dashboardData) renderBotSignals(dashboardData.signals || []);
   });
 
-  document.querySelectorAll("#journal-filter-btns .seg-btn").forEach((btn) => {
+  document.querySelectorAll("#journal-filter-btns .tf-item").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#journal-filter-btns .seg-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#journal-filter-btns .tf-item").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentFilter = btn.getAttribute("data-filter");
       renderJournal();
@@ -867,7 +868,7 @@ function setupTradeForm() {
       merged.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       saveJournal(merged);
       renderJournal();
-      alert(`${imported.length} رکورد بررسی و ایمپورت شد.`);
+      alert(`${imported.length} رکورد ایمپورت شد.`);
     } catch {
       alert("فایل JSON معتبر نیست.");
     }
@@ -894,7 +895,7 @@ function setupLotCalculator() {
     const s = Math.max(0.1, Number(sl.value) || 0.1);
     const riskUsd = b * (p / 100);
     const lot = riskUsd / (s * 100);
-    document.getElementById("calc-lot-out").textContent = `${lot.toFixed(2)} Lot`;
+    document.getElementById("calc-lot-out").textContent = lot.toFixed(2);
     document.getElementById("calc-risk-usd").textContent = `$${riskUsd.toFixed(2)}`;
     document.getElementById("calc-tp2-usd").textContent = `+$${(riskUsd * 2).toFixed(2)}`;
   };
@@ -934,7 +935,7 @@ ${recentSignals.length ? recentSignals.map((s) => `- ${s.timestamp_tehran} | ${s
 async function callAiProvider(userPrompt) {
   const s = getSettings();
   if (!s.aiKey) {
-    return "ابتدا از دکمه «کلید API» (یا تنظیمات) کلید سرویس‌دهنده AI خودت را وارد کن تا فقط در همین مرورگر ذخیره شود.";
+    return "ابتدا از بخش API Key / تنظیمات، کلید سرویس‌دهنده AI خودت را وارد کن.";
   }
 
   const systemPrompt = buildLiveAiContext();
@@ -995,7 +996,7 @@ async function callAiProvider(userPrompt) {
 function appendChatMessage(role, text) {
   const container = document.getElementById("ai-messages");
   const div = document.createElement("div");
-  div.className = `ai-msg ${role}`;
+  div.className = `msg ${role}`;
   div.textContent = text;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
@@ -1023,7 +1024,7 @@ function setupAiChatbot() {
   document.getElementById("ai-btn-clear").addEventListener("click", () => {
     chatHistory = [];
     document.getElementById("ai-messages").innerHTML =
-      `<div class="ai-msg bot">چت پاک شد. سوالت رو بپرس.</div>`;
+      `<div class="msg bot">چت پاک شد. سوالت رو بپرس.</div>`;
   });
 
   const sendPrompt = async (q) => {
@@ -1047,7 +1048,7 @@ function setupAiChatbot() {
     sendPrompt(q);
   });
 
-  document.querySelectorAll(".ai-chip").forEach((chip) => {
+  document.querySelectorAll(".q-chip").forEach((chip) => {
     chip.addEventListener("click", () => sendPrompt(chip.getAttribute("data-q")));
   });
 }
@@ -1110,15 +1111,13 @@ function setupSettingsModal() {
       localStorage.setItem(STORAGE_KEYS.SESSION, nextHash);
     }
 
-    document.getElementById("ai-provider-label").textContent =
-      `سرویس فعال: ${provider.toUpperCase()} • متصل به دیتای زنده`;
+    document.getElementById("ai-provider-label").textContent = `${provider.toUpperCase()} • LIVE DATA`;
     modal.classList.add("hidden");
   });
 }
 
-// ─── Initialization ─────────────────────────────────────────────────────────
+// ─── Init ───────────────────────────────────────────────────────────────────
 
-let initialized = false;
 function initDashboard() {
   if (initialized) return;
   initialized = true;
@@ -1126,9 +1125,9 @@ function initDashboard() {
   setupNavigationAndRail();
   renderTradingView("15");
 
-  document.querySelectorAll("#tv-tf-buttons .seg-btn").forEach((btn) => {
+  document.querySelectorAll("#tv-tf-buttons .tf-item").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#tv-tf-buttons .seg-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#tv-tf-buttons .tf-item").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       renderTradingView(btn.getAttribute("data-tf"));
     });
@@ -1142,8 +1141,7 @@ function initDashboard() {
 
   const s = getSettings();
   if (s.aiKey) {
-    document.getElementById("ai-provider-label").textContent =
-      `سرویس فعال: ${s.aiProvider.toUpperCase()} • متصل به دیتای زنده`;
+    document.getElementById("ai-provider-label").textContent = `${s.aiProvider.toUpperCase()} • LIVE DATA`;
   }
 
   document.getElementById("btn-refresh").addEventListener("click", () => {

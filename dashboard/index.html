@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-theme="dark">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gold Terminal — XAU/USD</title>
+  <title>XAU/USD — Terminal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -12,22 +12,16 @@
 <body>
   <!-- ══════════════════ LOGIN ══════════════════ -->
   <div id="login-overlay" class="login-overlay">
-    <div class="login-card">
-      <div class="login-head">
-        <div class="mark" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
+    <div class="login-box">
+      <div class="login-top">
+        <span class="pulse-dot" aria-hidden="true"></span>
         <div>
-          <h1>Gold Terminal</h1>
-          <p>XAU/USD Workspace</p>
+          <h1 class="mono">XAU/USD TERMINAL</h1>
+          <p>ورود به پنل سیگنال و ژورنال معاملاتی</p>
         </div>
       </div>
 
-      <form id="login-form" class="stack-md">
+      <form id="login-form" class="stack-sm">
         <div class="field">
           <label for="login-user">نام کاربری</label>
           <input id="login-user" type="text" autocomplete="username" placeholder="gold" required />
@@ -38,277 +32,247 @@
         </div>
         <label class="check-row">
           <input id="login-remember" type="checkbox" checked />
-          <span>ورود خودکار در این مرورگر</span>
+          <span>ذخیره نشست در این مرورگر</span>
         </label>
-        <div id="login-error" class="alert-error hidden">نام کاربری یا رمز عبور نادرست است.</div>
-        <button type="submit" class="btn btn-primary btn-full">ورود</button>
+        <div id="login-error" class="err-bar hidden">نام کاربری یا رمز عبور اشتباه است.</div>
+        <button type="submit" class="btn-solid btn-bull btn-full">ورود به ترمینال</button>
       </form>
-
-      <p class="login-foot">تنظیمات و کلید AI فقط در مرورگر خودت نگهداری می‌شوند.</p>
     </div>
   </div>
 
-  <!-- ══════════════════ APP SHELL ══════════════════ -->
-  <div id="app-shell" class="app-shell hidden">
-    <header class="topbar">
-      <div class="topbar-group">
-        <div class="brand-lockup">
-          <span class="live-dot" aria-hidden="true"></span>
-          <span class="brand-name mono">XAU/USD</span>
-          <span class="tag tag-neutral">OANDA</span>
+  <!-- ══════════════════ SHELL ══════════════════ -->
+  <div id="app-shell" class="shell hidden">
+    <!-- 44px Header -->
+    <header class="hdr">
+      <div class="hdr-group">
+        <div class="sym-lockup">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span class="mono sym-name">XAU/USD</span>
+          <span class="mono sym-ex">OANDA</span>
         </div>
 
-        <div class="ticker-pill">
-          <span id="live-price" class="mono ticker-price">$--,---.--</span>
-          <span id="live-change" class="mono tag tag-neutral">--%</span>
-          <span id="live-feed-badge" class="ticker-src">Syncing</span>
+        <span class="v-sep" aria-hidden="true"></span>
+
+        <div class="ticker">
+          <span id="live-price" class="mono ticker-val">$--,---.--</span>
+          <span id="live-change" class="mono ticker-chg">--%</span>
+          <span id="live-feed-badge" class="mono ticker-src">SYNC</span>
         </div>
 
-        <span id="htf-bias-badge" class="tag tag-gold">Macro: --</span>
+        <span class="v-sep" aria-hidden="true"></span>
+
+        <span id="htf-bias-badge" class="mono bias-ind">MACRO --</span>
       </div>
 
-      <nav class="nav-tabs" aria-label="ناوبری اصلی">
-        <button class="nav-tab active" data-view="terminal">ترمینال و چارت</button>
-        <button class="nav-tab" data-view="journal">ژورنال و وین‌ریت</button>
+      <nav class="hdr-tabs" aria-label="ناوبری">
+        <button class="hdr-tab active" data-view="terminal">چارت و سیگنال</button>
+        <button class="hdr-tab" data-view="journal">ژورنال و وین‌ریت</button>
       </nav>
 
-      <div class="topbar-group">
-        <span id="last-updated-text" class="sync-time mono">--</span>
-        <button id="btn-theme" class="icon-btn" aria-label="تغییر تم تیره/روشن" title="تغییر تم">
-          <svg id="theme-icon-sun" class="hidden" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-          <svg id="theme-icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-        </button>
-        <button id="btn-refresh" class="icon-btn" aria-label="بروزرسانی داده‌ها" title="بروزرسانی">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+      <div class="hdr-group">
+        <span id="last-updated-text" class="mono sync-ts">--</span>
+        <button id="btn-refresh" class="icon-btn" aria-label="بروزرسانی" title="بروزرسانی">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
         </button>
         <button id="btn-open-settings" class="icon-btn" aria-label="تنظیمات" title="تنظیمات">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
         <button id="btn-logout" class="icon-btn" aria-label="خروج" title="خروج">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
         </button>
       </div>
     </header>
 
-    <main class="workspace">
-      <!-- Slim Unified Metrics Strip -->
-      <section class="metrics-strip">
-        <div class="metric-cell">
-          <span class="metric-label">وین‌ریت کل</span>
-          <strong id="kpi-winrate" class="metric-val mono text-gold">0.0%</strong>
-          <span id="kpi-record" class="metric-sub mono">0W / 0L / 0BE</span>
+    <!-- 46px Telemetry Bar -->
+    <section class="telemetry">
+      <div class="tel-item">
+        <span class="tel-lbl">وین‌ریت</span>
+        <strong id="kpi-winrate" class="mono tel-val">0.0%</strong>
+        <span id="kpi-record" class="mono tel-sub">0W / 0L / 0BE</span>
+      </div>
+      <div class="tel-item">
+        <span class="tel-lbl">سود و ضرر خالص</span>
+        <strong id="kpi-pnl" class="mono tel-val">$0.00</strong>
+        <span id="kpi-gross" class="mono tel-sub">+$0 / -$0</span>
+      </div>
+      <div class="tel-item">
+        <span class="tel-lbl">پرافیت فکتور</span>
+        <strong id="kpi-pf" class="mono tel-val">0.00</strong>
+        <span id="kpi-avg-rr" class="mono tel-sub">Avg +$0 / -$0</span>
+      </div>
+      <div class="tel-item">
+        <span class="tel-lbl">تعداد ترید</span>
+        <strong id="kpi-total" class="mono tel-val">0</strong>
+        <span id="kpi-streak" class="mono tel-sub">Streak: 0</span>
+      </div>
+    </section>
+
+    <!-- ════════════ VIEW 1: TERMINAL ════════════ -->
+    <main id="view-terminal" class="term-grid">
+      <!-- Chart Desk -->
+      <section class="chart-desk">
+        <div class="subbar">
+          <div class="tf-row" id="tv-tf-buttons">
+            <button class="tf-item" data-tf="5">5m</button>
+            <button class="tf-item active" data-tf="15">15m</button>
+            <button class="tf-item" data-tf="30">30m</button>
+            <button class="tf-item" data-tf="60">1H</button>
+            <button class="tf-item" data-tf="240">4H</button>
+          </div>
+          <span class="mono subbar-note">TradingView Real-Time Spot</span>
         </div>
-        <div class="metric-cell">
-          <span class="metric-label">سود و ضرر خالص</span>
-          <strong id="kpi-pnl" class="metric-val mono">$0.00</strong>
-          <span id="kpi-gross" class="metric-sub mono">+$0 / -$0</span>
+        <div id="tv-chart-container" class="tv-canvas"></div>
+      </section>
+
+      <!-- Side Rail -->
+      <aside class="side-rail">
+        <div class="rail-tabs" id="rail-tabs">
+          <button class="rail-tab active" data-rail="signals">سیگنال‌ها <span id="signals-count-badge" class="mono cnt">0</span></button>
+          <button class="rail-tab" data-rail="indicators">اندیکاتور</button>
+          <button class="rail-tab" data-rail="news">اخبار USD</button>
         </div>
-        <div class="metric-cell">
-          <span class="metric-label">پرافیت فکتور</span>
-          <strong id="kpi-pf" class="metric-val mono">0.00</strong>
-          <span id="kpi-avg-rr" class="metric-sub mono">Avg +$0 / -$0</span>
+
+        <div id="rail-signals" class="rail-scroll">
+          <div id="bot-signals-list"></div>
         </div>
-        <div class="metric-cell">
-          <span class="metric-label">تعداد معاملات</span>
-          <strong id="kpi-total" class="metric-val mono">0</strong>
-          <span id="kpi-streak" class="metric-sub">بیشترین برد پیاپی: 0</span>
+
+        <div id="rail-indicators" class="rail-scroll hidden">
+          <div id="indicators-grid" class="kv-table"></div>
+          <div id="bot-reason-box" class="reason-strip">در حال بارگذاری...</div>
+        </div>
+
+        <div id="rail-news" class="rail-scroll hidden">
+          <div id="news-list"></div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- ════════════ VIEW 2: JOURNAL ════════════ -->
+    <main id="view-journal" class="jrn-grid hidden">
+      <!-- Left Desk: Trade Logger + Calculator -->
+      <section class="jrn-left">
+        <div class="pane-block">
+          <div class="pane-head">
+            <h2>ثبت معامله</h2>
+            <span class="muted">محاسبه خودکار وین‌ریت و سود/ضرر</span>
+          </div>
+
+          <form id="trade-form" class="stack-sm">
+            <input type="hidden" id="tf-signal-id" value="" />
+
+            <!-- Direction Segmented -->
+            <div class="dir-switch" id="dir-switch">
+              <button type="button" class="dir-btn active bull" data-dir="BUY">BUY / خرید</button>
+              <button type="button" class="dir-btn bear" data-dir="SELL">SELL / فروش</button>
+              <input type="hidden" id="tf-direction" value="BUY" />
+            </div>
+
+            <!-- Minimal Outcome Selector -->
+            <div class="outcome-grid" id="outcome-grid">
+              <button type="button" class="out-btn active" data-preset="TP">تارگت</button>
+              <button type="button" class="out-btn" data-preset="SL">استاپ</button>
+              <button type="button" class="out-btn" data-preset="MANUAL_PROFIT">سود دستی</button>
+              <button type="button" class="out-btn" data-preset="MANUAL_LOSS">ضرر دستی</button>
+              <button type="button" class="out-btn" data-preset="BE">سر‌به‌سر</button>
+              <input type="hidden" id="tf-outcome" value="TP" />
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="tf-engine">موتور / تایم‌فریم</label>
+                <select id="tf-engine">
+                  <option value="15M">15M</option>
+                  <option value="30M">30M</option>
+                  <option value="5M">5M</option>
+                  <option value="1H">1H</option>
+                  <option value="Manual">Manual</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="tf-pnl">سود یا ضرر ($)</label>
+                <input id="tf-pnl" type="number" step="0.01" placeholder="25.00" required />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="tf-note">توضیح (اختیاری)</label>
+              <input id="tf-note" type="text" placeholder="نقطه ورود یا دلیل بستن..." />
+            </div>
+
+            <button type="submit" class="btn-solid btn-bull btn-full">ثبت در ژورنال</button>
+          </form>
+        </div>
+
+        <div class="pane-block">
+          <div class="pane-head">
+            <h2>ماشین‌حساب حجم (Lot)</h2>
+            <span class="mono muted">100oz</span>
+          </div>
+          <div class="grid-3">
+            <div class="field">
+              <label for="calc-balance">بالانس $</label>
+              <input id="calc-balance" type="number" step="any" value="1000" />
+            </div>
+            <div class="field">
+              <label for="calc-risk-pct">ریسک %</label>
+              <input id="calc-risk-pct" type="number" step="0.1" value="1" />
+            </div>
+            <div class="field">
+              <label for="calc-sl-dist">استاپ $</label>
+              <input id="calc-sl-dist" type="number" step="0.1" value="5" />
+            </div>
+          </div>
+          <div class="calc-strip mono">
+            <div><span class="muted">LOT</span><strong id="calc-lot-out" class="text-bull">0.02</strong></div>
+            <div><span class="muted">RISK</span><strong id="calc-risk-usd">$10.00</strong></div>
+            <div><span class="muted">2R</span><strong id="calc-tp2-usd" class="text-bull">+$20.00</strong></div>
+          </div>
         </div>
       </section>
 
-      <!-- ════════════ VIEW 1: TERMINAL ════════════ -->
-      <section id="view-terminal" class="view-pane">
-        <div class="terminal-grid">
-          <!-- Chart Surface -->
-          <div class="surface chart-surface">
-            <div class="surface-head">
-              <div class="surface-title">
-                <h2>OANDA:XAUUSD</h2>
-                <span class="muted">چارت زنده تریدینگ‌ویو</span>
-              </div>
-              <div class="segmented" id="tv-tf-buttons">
-                <button class="seg-btn" data-tf="5">5M</button>
-                <button class="seg-btn active" data-tf="15">15M</button>
-                <button class="seg-btn" data-tf="30">30M</button>
-                <button class="seg-btn" data-tf="60">1H</button>
-                <button class="seg-btn" data-tf="240">4H</button>
-              </div>
-            </div>
-            <div id="tv-chart-container" class="tv-frame"></div>
-          </div>
-
-          <!-- Right Rail: Signals, Indicators, News -->
-          <div class="rail-surface surface">
-            <div class="segmented segmented-full" id="rail-tabs">
-              <button class="seg-btn active" data-rail="signals">سیگنال‌ها (<span id="signals-count-badge">0</span>)</button>
-              <button class="seg-btn" data-rail="indicators">اندیکاتور</button>
-              <button class="seg-btn" data-rail="news">اخبار USD</button>
-            </div>
-
-            <div id="rail-signals" class="rail-pane">
-              <div id="bot-signals-list" class="clean-list"></div>
-            </div>
-
-            <div id="rail-indicators" class="rail-pane hidden">
-              <div id="indicators-grid" class="kv-list"></div>
-              <div id="bot-reason-box" class="note-line">در حال بارگذاری...</div>
-            </div>
-
-            <div id="rail-news" class="rail-pane hidden">
-              <div id="news-list" class="clean-list"></div>
+      <!-- Right Desk: Equity Curve & History -->
+      <section class="jrn-right">
+        <div class="pane-block">
+          <div class="pane-head">
+            <h2>منحنی رشد سرمایه</h2>
+            <div class="row-xs">
+              <button id="btn-export-json" class="btn-ghost">JSON</button>
+              <button id="btn-export-csv" class="btn-ghost">CSV</button>
+              <label class="btn-ghost file-btn">
+                Import
+                <input id="input-import-json" type="file" accept=".json" hidden />
+              </label>
+              <button id="btn-clear-journal" class="btn-ghost danger">پاک</button>
             </div>
           </div>
+          <canvas id="equity-canvas" height="170"></canvas>
+          <div id="engine-breakdown" class="bd-row"></div>
         </div>
-      </section>
 
-      <!-- ════════════ VIEW 2: JOURNAL & ANALYTICS ════════════ -->
-      <section id="view-journal" class="view-pane hidden">
-        <div class="journal-layout">
-          <!-- Left Column: Trade Logger + Lot Calculator -->
-          <div class="stack-lg">
-            <div class="surface">
-              <div class="surface-head">
-                <div class="surface-title">
-                  <h2>ثبت نتیجه معامله</h2>
-                  <span class="muted">محاسبه خودکار وین‌ریت و سود/ضرر</span>
-                </div>
-              </div>
-
-              <form id="trade-form" class="stack-md">
-                <input type="hidden" id="tf-signal-id" value="" />
-                <div class="outcome-bar">
-                  <button type="button" class="outcome-pill win" data-preset="TP">تارگت (TP)</button>
-                  <button type="button" class="outcome-pill loss" data-preset="SL">استاپ (SL)</button>
-                  <button type="button" class="outcome-pill win" data-preset="MANUAL_PROFIT">سود دستی</button>
-                  <button type="button" class="outcome-pill loss" data-preset="MANUAL_LOSS">ضرر دستی</button>
-                  <button type="button" class="outcome-pill be" data-preset="BE">سر به سر</button>
-                </div>
-
-                <div class="grid-2">
-                  <div class="field">
-                    <label for="tf-direction">جهت</label>
-                    <select id="tf-direction">
-                      <option value="BUY">BUY (خرید)</option>
-                      <option value="SELL">SELL (فروش)</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="tf-engine">تایم‌فریم / موتور</label>
-                    <select id="tf-engine">
-                      <option value="15M">15M</option>
-                      <option value="30M">30M</option>
-                      <option value="5M">5M</option>
-                      <option value="1H">1H</option>
-                      <option value="Manual">دستی</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="grid-2">
-                  <div class="field">
-                    <label for="tf-outcome">نوع نتیجه</label>
-                    <select id="tf-outcome">
-                      <option value="TP">تارگت خورد (TP)</option>
-                      <option value="SL">استاپ خورد (SL)</option>
-                      <option value="MANUAL_PROFIT">برداشت سود دستی</option>
-                      <option value="MANUAL_LOSS">برداشت ضرر دستی</option>
-                      <option value="BE">سر به سر (BE)</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="tf-pnl">مبلغ سود یا ضرر ($)</label>
-                    <input id="tf-pnl" type="number" step="0.01" placeholder="مثلاً 25.00" required />
-                  </div>
-                </div>
-
-                <div class="field">
-                  <label for="tf-note">یادداشت (اختیاری)</label>
-                  <input id="tf-note" type="text" placeholder="توضیح کوتاه معامله..." />
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-full">ثبت در ژورنال</button>
-              </form>
-            </div>
-
-            <div class="surface">
-              <div class="surface-head">
-                <div class="surface-title">
-                  <h2>محاسبه‌گر حجم (Lot Size)</h2>
-                  <span class="muted">قرارداد استاندارد 100oz</span>
-                </div>
-              </div>
-              <div class="grid-3">
-                <div class="field">
-                  <label for="calc-balance">بالانس ($)</label>
-                  <input id="calc-balance" type="number" step="any" value="1000" />
-                </div>
-                <div class="field">
-                  <label for="calc-risk-pct">ریسک (%)</label>
-                  <input id="calc-risk-pct" type="number" step="0.1" value="1" />
-                </div>
-                <div class="field">
-                  <label for="calc-sl-dist">فاصله استاپ ($)</label>
-                  <input id="calc-sl-dist" type="number" step="0.1" value="5" />
-                </div>
-              </div>
-              <div class="calc-bar mono">
-                <div><span class="muted">حجم</span><strong id="calc-lot-out" class="text-gold">0.02 Lot</strong></div>
-                <div><span class="muted">ریسک</span><strong id="calc-risk-usd">$10.00</strong></div>
-                <div><span class="muted">تارگت 2R</span><strong id="calc-tp2-usd" class="text-green">+$20.00</strong></div>
-              </div>
+        <div class="pane-block flex-grow">
+          <div class="pane-head">
+            <h2>تاریخچه معاملات</h2>
+            <div class="tf-row" id="journal-filter-btns">
+              <button class="tf-item active" data-filter="ALL">همه</button>
+              <button class="tf-item" data-filter="WIN">سود</button>
+              <button class="tf-item" data-filter="LOSS">ضرر</button>
             </div>
           </div>
-
-          <!-- Right Column: Equity Curve, Breakdown, History -->
-          <div class="stack-lg">
-            <div class="surface">
-              <div class="surface-head">
-                <div class="surface-title">
-                  <h2>منحنی رشد سرمایه (Equity Curve)</h2>
-                </div>
-                <div class="row-gap">
-                  <button id="btn-export-json" class="btn btn-subtle btn-xs">JSON</button>
-                  <button id="btn-export-csv" class="btn btn-subtle btn-xs">CSV</button>
-                  <label class="btn btn-subtle btn-xs file-btn">
-                    ورود JSON
-                    <input id="input-import-json" type="file" accept=".json" hidden />
-                  </label>
-                  <button id="btn-clear-journal" class="btn btn-danger btn-xs">پاک کردن</button>
-                </div>
-              </div>
-              <div class="canvas-box">
-                <canvas id="equity-canvas" height="175"></canvas>
-              </div>
-              <div id="engine-breakdown" class="breakdown-grid"></div>
-            </div>
-
-            <div class="surface">
-              <div class="surface-head">
-                <div class="surface-title">
-                  <h2>تاریخچه معاملات</h2>
-                </div>
-                <div class="segmented" id="journal-filter-btns">
-                  <button class="seg-btn active" data-filter="ALL">همه</button>
-                  <button class="seg-btn" data-filter="WIN">سودها</button>
-                  <button class="seg-btn" data-filter="LOSS">ضررها</button>
-                </div>
-              </div>
-              <div class="table-scroll">
-                <table class="minimal-table">
-                  <thead>
-                    <tr>
-                      <th>زمان</th>
-                      <th>جهت</th>
-                      <th>موتور</th>
-                      <th>وضعیت</th>
-                      <th>PnL ($)</th>
-                      <th>توضیح</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="journal-tbody"></tbody>
-                </table>
-              </div>
-            </div>
+          <div class="tbl-wrap">
+            <table class="desk-table">
+              <thead>
+                <tr>
+                  <th>زمان</th>
+                  <th>جهت</th>
+                  <th>موتور</th>
+                  <th>وضعیت</th>
+                  <th>PnL</th>
+                  <th>یادداشت</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="journal-tbody"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -316,108 +280,101 @@
   </div>
 
   <!-- ══════════════════ AI ASSISTANT ══════════════════ -->
-  <button id="ai-fab" class="ai-fab hidden" aria-label="باز کردن دستیار هوش مصنوعی">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+  <button id="ai-fab" class="ai-trigger hidden" aria-label="دستیار هوش مصنوعی">
+    <span class="pulse-dot" aria-hidden="true"></span>
     <span>دستیار AI</span>
   </button>
 
-  <aside id="ai-drawer" class="ai-drawer hidden" aria-label="چت‌بات دستیار طلا">
-    <div class="ai-head">
+  <aside id="ai-drawer" class="ai-panel hidden" aria-label="چت‌بات">
+    <div class="ai-top">
       <div>
-        <strong>دستیار هوشمند طلا</strong>
-        <p id="ai-provider-label" class="muted">متصل به دیتای زنده ربات و اخبار</p>
+        <strong>AI Assistant</strong>
+        <span id="ai-provider-label" class="mono muted">LIVE DATA LINKED</span>
       </div>
-      <div class="row-gap">
-        <button id="ai-btn-settings" class="btn btn-subtle btn-xs">کلید API</button>
-        <button id="ai-btn-clear" class="btn btn-subtle btn-xs">پاک</button>
-        <button id="ai-btn-close" class="icon-btn" aria-label="بستن چت">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      <div class="row-xs">
+        <button id="ai-btn-settings" class="btn-ghost">API Key</button>
+        <button id="ai-btn-clear" class="btn-ghost">Clear</button>
+        <button id="ai-btn-close" class="icon-btn" aria-label="بستن">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
     </div>
 
-    <div class="ai-chips">
-      <button class="ai-chip" data-q="قیمت لحظه‌ای طلا و وضعیت اندیکاتورها الان چطوره؟">قیمت و وضعیت</button>
-      <button class="ai-chip" data-q="اخبار مهم اقتصادی امروز برای دلار و طلا چیا هستن؟">اخبار امروز</button>
-      <button class="ai-chip" data-q="عملکرد ژورنال معاملاتی و وین‌ریت من رو تحلیل کن.">تحلیل ژورنال</button>
-      <button class="ai-chip" data-q="آخرین سیگنال‌های ربات و روند کلان 1H و 4H چیه؟">سیگنال و روند</button>
+    <div class="ai-quick">
+      <button class="q-chip" data-q="قیمت لحظه‌ای طلا و وضعیت اندیکاتورها الان چطوره؟">قیمت و اندیکاتور</button>
+      <button class="q-chip" data-q="اخبار مهم اقتصادی امروز برای دلار و طلا چیا هستن؟">اخبار امروز</button>
+      <button class="q-chip" data-q="عملکرد ژورنال معاملاتی و وین‌ریت من رو تحلیل کن.">تحلیل وین‌ریت</button>
     </div>
 
-    <div id="ai-messages" class="ai-messages">
-      <div class="ai-msg bot">سلام. به قیمت لحظه‌ای طلا، اندیکاتورها، اخبار USD امروز و آمار ژورنالت متصلم. سوالت رو بپرس.</div>
+    <div id="ai-messages" class="ai-body">
+      <div class="msg bot">متصل به قیمت لحظه‌ای طلا، اندیکاتورها، اخبار USD و آمار ژورنالت. سوالت رو بپرس.</div>
     </div>
 
-    <form id="ai-form" class="ai-input-bar">
+    <form id="ai-form" class="ai-foot">
       <input id="ai-input" type="text" placeholder="سوال درباره قیمت، خبر یا معامله..." autocomplete="off" />
-      <button type="submit" class="btn btn-primary btn-sm">ارسال</button>
+      <button type="submit" class="btn-solid btn-bull">ارسال</button>
     </form>
   </aside>
 
   <!-- ══════════════════ SETTINGS MODAL ══════════════════ -->
-  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="modal-card">
-      <div class="surface-head">
+  <div id="settings-modal" class="modal-mask hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-box">
+      <div class="pane-head">
         <h2 id="settings-title">تنظیمات</h2>
-        <button id="btn-close-settings" class="icon-btn" aria-label="بستن تنظیمات">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        <button id="btn-close-settings" class="icon-btn" aria-label="بستن">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
 
-      <form id="settings-form" class="stack-md">
-        <div class="settings-box">
-          <h3>هوش مصنوعی (ذخیره فقط در مرورگر)</h3>
+      <form id="settings-form" class="stack-sm">
+        <div class="field">
+          <label for="set-ai-provider">سرویس‌دهنده AI (ذخیره فقط در مرورگر)</label>
+          <select id="set-ai-provider">
+            <option value="gemini">Google Gemini</option>
+            <option value="groq">Groq</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI / Custom</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-ai-key">کلید API</label>
+          <input id="set-ai-key" type="password" placeholder="AIza... / gsk_... / sk-..." />
+        </div>
+        <div class="grid-2">
           <div class="field">
-            <label for="set-ai-provider">سرویس‌دهنده</label>
-            <select id="set-ai-provider">
-              <option value="gemini">Google Gemini (پیشنهادی)</option>
-              <option value="groq">Groq</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="openai">OpenAI / Custom</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="set-ai-key">کلید API</label>
-            <input id="set-ai-key" type="password" placeholder="AIza... / gsk_... / sk-..." />
-          </div>
-          <div class="field">
-            <label for="set-ai-model">نام مدل</label>
+            <label for="set-ai-model">مدل</label>
             <input id="set-ai-model" type="text" placeholder="gemini-2.5-flash" />
           </div>
-          <div class="field hidden" id="custom-endpoint-wrap">
-            <label for="set-ai-endpoint">Base URL</label>
-            <input id="set-ai-endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions" />
-          </div>
-          <label class="check-row" id="gemini-search-wrap">
-            <input id="set-gemini-search" type="checkbox" checked />
-            <span>جستجوی زنده گوگل (Google Search Grounding)</span>
-          </label>
-        </div>
-
-        <div class="settings-box">
-          <h3>ریسک پیش‌فرض ژورنال</h3>
           <div class="field">
-            <label for="set-default-risk">ریسک پایه هر معامله ($)</label>
+            <label for="set-default-risk">ریسک پایه ($)</label>
             <input id="set-default-risk" type="number" step="1" value="10" />
           </div>
         </div>
+        <div class="field hidden" id="custom-endpoint-wrap">
+          <label for="set-ai-endpoint">Base URL</label>
+          <input id="set-ai-endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions" />
+        </div>
+        <label class="check-row" id="gemini-search-wrap">
+          <input id="set-gemini-search" type="checkbox" checked />
+          <span>جستجوی زنده گوگل (Gemini Search Grounding)</span>
+        </label>
 
-        <div class="settings-box">
-          <h3>تغییر نام کاربری و رمز مرورگر</h3>
-          <div class="grid-2">
-            <div class="field">
-              <label for="set-new-user">نام کاربری جدید</label>
-              <input id="set-new-user" type="text" placeholder="بدون تغییر" />
-            </div>
-            <div class="field">
-              <label for="set-new-pass">رمز عبور جدید</label>
-              <input id="set-new-pass" type="password" placeholder="بدون تغییر" />
-            </div>
+        <div class="h-sep"></div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="set-new-user">نام کاربری جدید</label>
+            <input id="set-new-user" type="text" placeholder="بدون تغییر" />
+          </div>
+          <div class="field">
+            <label for="set-new-pass">رمز عبور جدید</label>
+            <input id="set-new-pass" type="password" placeholder="بدون تغییر" />
           </div>
         </div>
 
-        <div class="row-gap">
-          <button type="submit" class="btn btn-primary">ذخیره</button>
-          <button type="button" id="btn-cancel-settings" class="btn btn-subtle">انصراف</button>
+        <div class="row-xs" style="margin-top:0.4rem">
+          <button type="submit" class="btn-solid btn-bull">ذخیره</button>
+          <button type="button" id="btn-cancel-settings" class="btn-ghost">انصراف</button>
         </div>
       </form>
     </div>
