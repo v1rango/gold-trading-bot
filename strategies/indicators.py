@@ -6,7 +6,7 @@ Covers: EMA 20/50/200, RSI, MACD, Bollinger Bands,
 import pandas as pd
 import numpy as np
 from ta.trend      import EMAIndicator, MACD, ADXIndicator
-from ta.momentum   import RSIIndicator, StochRSIIndicator
+from ta.momentum   import RSIIndicator, StochRSIIndicator, StochasticOscillator
 from ta.volatility import BollingerBands, AverageTrueRange
 
 
@@ -23,16 +23,21 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_200"] = EMAIndicator(c, window=200).ema_indicator()
 
     # ── Momentum ──────────────────────────────────────────────────
-    df["rsi"] = RSIIndicator(c, window=14).rsi()
+    df["rsi"]   = RSIIndicator(c, window=14).rsi()
+    df["rsi_7"] = RSIIndicator(c, window=7).rsi()
 
     macd = MACD(c, window_fast=12, window_slow=26, window_sign=9)
     df["macd"]        = macd.macd()
     df["macd_signal"] = macd.macd_signal()
     df["macd_hist"]   = macd.macd_diff()
 
-    stoch = StochRSIIndicator(c, window=14, smooth1=3, smooth2=3)
-    df["stoch_k"] = stoch.stochrsi_k()
-    df["stoch_d"] = stoch.stochrsi_d()
+    stoch_rsi = StochRSIIndicator(c, window=14, smooth1=3, smooth2=3)
+    df["stoch_k"] = stoch_rsi.stochrsi_k()
+    df["stoch_d"] = stoch_rsi.stochrsi_d()
+
+    osc = StochasticOscillator(h, l, c, window=14, smooth_window=3)
+    df["osc_k"] = osc.stoch()
+    df["osc_d"] = osc.stoch_signal()
 
     # ── Volatility ────────────────────────────────────────────────
     bb = BollingerBands(c, window=20, window_dev=2)

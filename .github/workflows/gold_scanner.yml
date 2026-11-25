@@ -2,12 +2,12 @@ name: Gold Market Scanner
 
 on:
   schedule:
-    # Active window: 12:00 PM - 00:00 AM Tehran (UTC+3:30 = 08:30 - 20:30 UTC), Mon-Fri
-    - cron: '30 8 * * 1-5'          # 12:00 PM Tehran -> Wakeup + scan
-    - cron: '40,50 8 * * 1-5'       # 12:10, 12:20 PM Tehran -> Scan
-    - cron: '*/10 9-19 * * 1-5'     # 12:30 PM - 23:20 PM Tehran -> Scan every 10 min
-    - cron: '0,10,20 20 * * 1-5'    # 23:30, 23:40, 23:50 PM Tehran -> Scan
-    - cron: '30 20 * * 1-5'         # 00:00 AM Tehran -> Goodnight / Sleep
+    # Active window: 10:00 AM - 00:00 AM Tehran (UTC+3:30 = 06:30 - 20:30 UTC), Mon-Fri
+    - cron: '30 6 * * 1-5'               # 10:00 AM Tehran -> Wakeup + scan
+    - cron: '35,40,45,50,55 6 * * 1-5'   # 10:05 - 10:25 AM Tehran -> Scan
+    - cron: '*/5 7-19 * * 1-5'           # 10:30 AM - 23:25 PM Tehran -> Scan every 5 min
+    - cron: '0,5,10,15,20,25 20 * * 1-5' # 23:30 - 23:55 PM Tehran -> Scan
+    - cron: '30 20 * * 1-5'              # 00:00 AM Tehran -> Goodnight / Sleep
 
   # Allows manual button trigger from GitHub website or mobile app anytime!
   workflow_dispatch:
@@ -39,6 +39,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Restore scanner state (dedup & cooldown)
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: bot-state-${{ github.run_id }}
+          restore-keys: |
+            bot-state-
+
       - name: Run Market Scan
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -52,10 +60,17 @@ jobs:
             else
               python scan_once.py --manual
             fi
-          elif [ "${{ github.event.schedule }}" = "30 8 * * 1-5" ]; then
+          elif [ "${{ github.event.schedule }}" = "30 6 * * 1-5" ]; then
             python scan_once.py --wakeup
           elif [ "${{ github.event.schedule }}" = "30 20 * * 1-5" ]; then
             python scan_once.py --sleep
           else
             python scan_once.py
           fi
+
+      - name: Save scanner state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: bot-state-${{ github.run_id }}

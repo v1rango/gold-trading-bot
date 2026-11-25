@@ -17,7 +17,7 @@ GOLD_SYMBOL = "OANDA:XAUUSD"
 TIMEZONE = pytz.timezone("Asia/Tehran")
 
 # ===== Active hours (Tehran time) =====
-START_HOUR = 12   # 12:00 PM
+START_HOUR = 10   # 10:00 AM
 END_HOUR   = 24   # 12:00 AM
 
 # ===== Indicator params =====
@@ -43,10 +43,12 @@ STOCH_PERIOD = 14
 STOCH_SMOOTH = 3
 
 # ===== Signal quality filters =====
-MIN_CONFLUENCE   = 6        # out of 8 indicators (must align with 4H trend + ADX)
-MIN_RR_RATIO     = 2.0      # minimum Risk:Reward to send signal
-ADX_TREND_MIN    = 20       # ADX below this = choppy market, skip
+MIN_CONFLUENCE   = 6        # out of 8 indicators for 1H macro
+MIN_RR_RATIO     = 2.0      # minimum Risk:Reward for 1H macro
+ADX_TREND_MIN    = 20       # ADX below this = choppy market for 1H macro
 ATR_SL_MULT      = 1.8      # stop loss = ATR * this multiplier (backtested optimal)
+DEDUP_MINUTES    = 120      # min gap between same-direction signals across engines
+STATE_FILE       = "state.json"
 
 # ===== Scan interval =====
-SCAN_MINUTES = 10           # scan every 10 minutes
+SCAN_MINUTES = 5            # scan every 5 minutes

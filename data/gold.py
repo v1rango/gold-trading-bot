@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 TV_WS_URL = "wss://data.tradingview.com/socket.io/websocket"
 TV_ORIGIN = "https://www.tradingview.com"
 TV_SYMBOLS = ("OANDA:XAUUSD", "TVC:GOLD", "FOREXCOM:XAUUSD")
-TV_INTERVAL_MAP = {"30m": "30", "1h": "60", "4h": "240"}
+TV_INTERVAL_MAP = {"5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240"}
 
 SWISSQUOTE_URL = "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD"
 TV_SCANNER_URL = "https://scanner.tradingview.com/cfd/scan"
@@ -128,6 +128,15 @@ def _fetch_yf_candles(interval: str, period: str) -> pd.DataFrame:
     return df
 
 
+def _get_tf_candles(tv_tf: str, yf_interval: str, yf_period: str, limit: int) -> pd.DataFrame:
+    """Fetch candles for any timeframe with TradingView primary and yfinance fallback."""
+    try:
+        return _fetch_tv_candles(tv_tf, limit).tail(limit)
+    except Exception as e:
+        logger.warning(f"Falling back to yfinance for {tv_tf}: {e}")
+        return _fetch_yf_candles(yf_interval, yf_period).tail(limit)
+
+
 def get_gold_4h(limit: int = 350) -> pd.DataFrame:
     """4-hour XAU/USD candles (350 bars for accurate EMA200)."""
     try:
@@ -143,20 +152,22 @@ def get_gold_4h(limit: int = 350) -> pd.DataFrame:
 
 def get_gold_1h(limit: int = 350) -> pd.DataFrame:
     """1-hour XAU/USD candles (350 bars for accurate EMA200)."""
-    try:
-        return _fetch_tv_candles("1h", limit).tail(limit)
-    except Exception as e:
-        logger.warning(f"Falling back to yfinance for 1H: {e}")
-        return _fetch_yf_candles("1h", "3mo").tail(limit)
+    return _get_tf_candles("1h", "1h", "3mo", limit)
 
 
-def get_gold_30m(limit: int = 250) -> pd.DataFrame:
+def get_gold_30m(limit: int = 300) -> pd.DataFrame:
     """30-minute XAU/USD candles."""
-    try:
-        return _fetch_tv_candles("30m", limit).tail(limit)
-    except Exception as e:
-        logger.warning(f"Falling back to yfinance for 30M: {e}")
-        return _fetch_yf_candles("30m", "30d").tail(limit)
+    return _get_tf_candles("30m", "30m", "30d", limit)
+
+
+def get_gold_15m(limit: int = 300) -> pd.DataFrame:
+    """15-minute XAU/USD candles."""
+    return _get_tf_candles("15m", "15m", "15d", limit)
+
+
+def get_gold_5m(limit: int = 300) -> pd.DataFrame:
+    """5-minute XAU/USD candles."""
+    return _get_tf_candles("5m", "5m", "5d", limit)
 
 
 def _get_tv_ws_quote() -> Optional[Dict]:

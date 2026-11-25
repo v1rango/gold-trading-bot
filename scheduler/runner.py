@@ -8,28 +8,28 @@ TEHRAN_TZ = pytz.timezone("Asia/Tehran")
 
 def setup_scheduler(scan_job, daily_job, sleep_job=None) -> BlockingScheduler:
     """
-    scan_job  → every 10 min between 12:00 and 23:50 (Tehran)
-    daily_job → every day at 12:00 (Tehran)
-    sleep_job → every day at 00:00 (Tehran)
+    scan_job  → every 5 min between 10:00 and 23:55 (Tehran)
+    daily_job → every day at 10:00 AM (Tehran)
+    sleep_job → every day at 00:00 AM (Tehran)
     """
     scheduler = BlockingScheduler(timezone=TEHRAN_TZ)
 
-    # Scan every 10 minutes from 12:00 to 23:50
+    # Scan every 5 minutes from 10:00 AM to 23:55 PM Tehran
     scheduler.add_job(
         scan_job,
-        trigger=CronTrigger(hour="12-23", minute="*/10", timezone=TEHRAN_TZ),
+        trigger=CronTrigger(hour="10-23", minute="*/5", timezone=TEHRAN_TZ),
         id="gold_scan",
-        name="Gold Scanner",
+        name="Gold Multi-TF Scanner",
         misfire_grace_time=60,
         max_instances=1,
     )
 
-    # Daily wakeup / summary at 12:00
+    # Daily wakeup at 10:00 AM
     scheduler.add_job(
         daily_job,
-        trigger=CronTrigger(hour=12, minute=0, timezone=TEHRAN_TZ),
+        trigger=CronTrigger(hour=10, minute=0, timezone=TEHRAN_TZ),
         id="daily_summary",
-        name="Daily Wakeup & Summary",
+        name="Daily Wakeup",
         misfire_grace_time=120,
         max_instances=1,
     )
@@ -45,5 +45,5 @@ def setup_scheduler(scan_job, daily_job, sleep_job=None) -> BlockingScheduler:
             max_instances=1,
         )
 
-    logger.info("Scheduler: scan every 10 min (12:00-23:50), wakeup at 12:00, sleep at 00:00")
+    logger.info("Scheduler: scan every 5 min (10:00-23:55), wakeup at 10:00, sleep at 00:00")
     return scheduler

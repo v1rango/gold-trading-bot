@@ -29,7 +29,7 @@ class Check:
 
 @dataclass
 class TradingSignal:
-    direction:       str           # 'BUY' | 'SELL'
+    direction:       str           # 'BUY' | 'SELL' | 'NONE'
     entry:           float
     stop_loss:       float
     take_profit:     float
@@ -39,6 +39,9 @@ class TradingSignal:
     confluence:      int           = 0
     total_checks:    int           = 8
     skip_reason:     str           = ""
+    timeframe:       str           = "4H+1H+30M"
+    strategy_name:   str           = "همگرایی چندتایم‌فریم (1H)"
+    candle_ts:       str           = ""
 
 
 # ─── individual checks (return Check objects) ─────────────────────────────────

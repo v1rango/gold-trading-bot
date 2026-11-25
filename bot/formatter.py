@@ -79,45 +79,49 @@ def format_signal(sig: TradingSignal, gold_price: dict) -> str:
         f"📋 *تأیید استراتژی‌ها ({sig.confluence}/{sig.total_checks}):*\n"
         f"{checks_text}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏱ تایم‌فریم: `4H + 1H + 30M`\n"
+        f"⚙️ استراتژی: `{sig.strategy_name}`\n"
+        f"⏱ تایم‌فریم: `{sig.timeframe}`\n"
         f"🕐 `{_now()}`\n"
         f"⚠️ _این سیگنال برای آموزش است، نه توصیه مالی_"
     )
 
 
-def format_manual_status(gold_price: dict, curr_1h, reason: str) -> str:
+def format_manual_status(gold_price: dict, curr_1h, reason: str, htf_bias: str = "") -> str:
     """Format manual scan market report when no trade signal triggers."""
     src = gold_price.get("source", "XAU/USD")
     bid_ask = ""
     if "bid" in gold_price and "ask" in gold_price:
         bid_ask = f" (Bid: `{gold_price['bid']:,.2f}` | Ask: `{gold_price['ask']:,.2f}`)"
+    bias_line = f"🧭 {htf_bias}\n" if htf_bias else ""
     return (
         f"🔍 *گزارش اسکن دستی طلا*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 قیمت لحظه‌ای: `${gold_price['price']:,.2f}`{bid_ask}\n"
         f"📡 منبع: `{src}`\n"
-        f"📊 وضعیت: `{reason}`\n"
-        f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}`\n"
-        f"⚡ شاخص مومنتوم (RSI): `{curr_1h['rsi']:.1f}`\n"
+        f"{bias_line}"
+        f"📊 وضعیت 1H: `{reason}`\n"
+        f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}` | ⚡ RSI: `{curr_1h['rsi']:.1f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"ℹ️ _سیگنال ورود با شروط دقیق یافت نشد._\n"
+        f"ℹ️ _در حال رصد ۵ موتور معاملاتی (5M/15M/30M/1H) — فعلاً ستاپ باکیفیت آماده نیست._\n"
         f"🕐 `{_now()}`"
     )
 
 
-def format_wakeup_message(gold: dict, curr_1h) -> str:
-    """Morning wakeup message at 12:00 PM Tehran."""
+def format_wakeup_message(gold: dict, curr_1h, htf_bias: str = "") -> str:
+    """Morning wakeup message at 10:00 AM Tehran."""
     chg = gold["change_24h"]
     chg_e = "📈" if chg >= 0 else "📉"
     src = gold.get("source", "OANDA:XAUUSD")
+    bias_line = f"🧭 {htf_bias}\n" if htf_bias else ""
     return (
         f"☀️ *سلام! بیدار شدم — شروع رصد امروز طلا*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 قیمت شروع روز: `${gold['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
         f"📡 منبع: `{src}`\n"
+        f"{bias_line}"
         f"📈 ADX فعلی: `{curr_1h['adx']:.1f}` | ⚡ RSI: `{curr_1h['rsi']:.1f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 تا ساعت ۰۰:۰۰ بامداد هر ۱۰ دقیقه بازار رو زیر نظر دارم و هر وقت سیگنال معتبر بود خبرت می‌کنم.\n"
+        f"🤖 تا ساعت ۰۰:۰۰ بامداد هر ۵ دقیقه بازار رو با موتورهای 5M/15M/30M/1H اسکن می‌کنم.\n"
         f"🕐 `{_now()}`"
     )
 
@@ -133,8 +137,8 @@ def format_sleep_message(gold: dict) -> str:
         f"💰 آخرین قیمت طلا: `${gold['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
         f"📡 منبع: `{src}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌙 رصد خودکار تا فردا ساعت ۱۲:۰۰ ظهر متوقف می‌شه.\n"
-        f"☀️ فردا ظهر دوباره بیدار می‌شم. شب بخیر!\n"
+        f"🌙 رصد خودکار تا فردا ساعت ۱۰:۰۰ صبح متوقف می‌شه.\n"
+        f"☀️ فردا صبح دوباره بیدار می‌شم. شب بخیر!\n"
         f"🕐 `{_now()}`"
     )
 
@@ -158,33 +162,28 @@ def format_daily_summary(gold: dict, news: list) -> str:
         f"📰 *اخبار مهم طلا:*\n"
         f"{news_lines}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏰ ربات ۱۲:۰۰ تا ۰۰:۰۰ فعال — هر ۱۰ دقیقه اسکن\n"
+        f"⏰ ربات ۱۰:۰۰ تا ۰۰:۰۰ فعال — هر ۵ دقیقه اسکن\n"
         f"🕐 `{_now()}`"
     )
 
 
 def format_startup() -> str:
     return (
-        "🚀 *ربات طلا فعال شد!*\n"
+        "🚀 *ربات پیشرفته طلا (نسخه ۴ تایم‌فریم) فعال شد!*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "✅ دیتای زنده Spot (OANDA:XAUUSD): متصل\n"
-        "✅ سیستم تحلیل: آماده\n\n"
+        "✅ موتورهای تحلیلی: آماده\n\n"
         "🥇 *دارایی تحت نظر: طلا (XAU/USD)*\n\n"
-        "⏰ *ساعت فعالیت:* ۱۲:۰۰ تا ۰۰:۰۰\n"
-        "🔄 *اسکن:* هر ۱۰ دقیقه\n\n"
-        "🎯 *۸ چک روی ۳ تایم‌فریم:*\n"
-        "  • روند 4H — EMA 200\n"
-        "  • EMA 20/50 (1H)\n"
-        "  • RSI 14 (1H)\n"
-        "  • MACD 12,26,9 (1H)\n"
-        "  • Bollinger Bands (1H)\n"
-        "  • ADX 14 — قدرت روند (1H)\n"
-        "  • Stochastic RSI (30M)\n"
-        "  • RSI 14 (30M)\n\n"
-        "🔒 *فیلترهای کیفیت (بک‌تست شده):*\n"
-        "  • حداقل ۶/۸ تأیید + هم‌راستا با 4H\n"
-        "  • حداقل R:R = 2.0\n"
-        "  • ADX ≥ 20 (بازار ترند)\n\n"
+        "⏰ *ساعت فعالیت:* ۱۰:۰۰ صبح تا ۰۰:۰۰ شب\n"
+        "🔄 *اسکن:* هر ۵ دقیقه\n\n"
+        "🎯 *۴ موتور هم‌راستا با روند کلان 4H+1H:*\n"
+        "  • همگرایی جامع (1H) — R:R ≥ 2.0\n"
+        "  • پولبک دقیق (30M) — StochRSI / RSI7\n"
+        "  • اسنایپر (15M) — BB / Stoch / ۳ کندلی / RSI7\n"
+        "  • اسکالپ دقیق (5M) — کنترل دریفت زنده\n\n"
+        "🔒 *مدیریت ریسک:*\n"
+        "  • کول‌داون ۲ ساعته در هر جهت (ضد تکرار)\n"
+        "  • استاپ داینامیک ATR\n\n"
         "⚠️ _سیگنال‌ها برای آموزش هستند_"
     )
 

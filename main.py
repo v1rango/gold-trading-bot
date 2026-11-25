@@ -1,7 +1,7 @@
 """
 Gold Trading Bot — Main Entry Point
-Monitors XAU/USD (OANDA Spot) across 4H / 1H / 30M timeframes.
-Active hours: 12:00 – 00:00 Tehran time (scan every 10 min).
+Monitors XAU/USD (OANDA Spot) across 4H / 1H / 30M / 15M / 5M timeframes.
+Active hours: 10:00 AM – 00:00 AM Tehran time (scan every 5 min).
 """
 import logging
 import sys
@@ -18,73 +18,32 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS
-from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
+from data.gold import get_gold_1h, get_gold_4h, get_gold_price
 from data.news import fetch_news
 from strategies.indicators import calculate_indicators
-from strategies.signals import generate_signal
+from strategies.multi_engine import get_htf_bias
+from strategies.scan_runner import run_gold_scan
 from bot.telegram_bot import TelegramBot
 from bot.formatter import (
-    format_signal, format_daily_summary, format_startup,
-    format_manual_status, format_wakeup_message, format_sleep_message,
+    format_daily_summary, format_startup,
+    format_wakeup_message, format_sleep_message,
 )
 from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
 bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS)
 
-# Dedup: remember last sent signal key
-_last_key: str = ""
-
-
-# ─── scan ─────────────────────────────────────────────────────────────────────
 
 def scan_gold(is_manual: bool = False, target_chat_id: str | None = None) -> None:
-    global _last_key
     logger.info("=" * 55)
     logger.info(f"Gold scan started (manual={is_manual}) …")
-
     try:
-        # Fetch multi-timeframe data
-        df4h  = calculate_indicators(get_gold_4h())
-        df1h  = calculate_indicators(get_gold_1h())
-        df30m = calculate_indicators(get_gold_30m())
-
-        price = get_gold_price()
-        sig   = generate_signal(df4h, df1h, df30m, current_price=price["price"])
-
-        # 1. Valid Signal Found -> Send full signal alert
-        if sig is not None and sig.direction in ("BUY", "SELL"):
-            key = f"{sig.direction}_{sig.confluence}_{round(sig.entry, 1)}"
-            if key != _last_key or is_manual:
-                msg = format_signal(sig, price)
-                if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id):
-                    if not is_manual:
-                        _last_key = key
-                    logger.info(
-                        f"Signal sent: {sig.direction} entry={sig.entry} "
-                        f"TP={sig.take_profit} SL={sig.stop_loss} "
-                        f"RR={sig.rr_ratio} prob={sig.win_probability}%"
-                    )
-            else:
-                logger.info(f"Same signal as before ({key}), skipped.")
-            return
-
-        # 2. Manual Scan Request -> Provide informative market status report
-        if is_manual:
-            status_msg = format_manual_status(price, df1h.iloc[-1], sig.skip_reason)
-            bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id)
-            logger.info("Manual scan status sent to Telegram.")
-        else:
-            logger.info(f"Automatic scan completed silently: {sig.skip_reason}")
-
+        run_gold_scan(bot, is_manual=is_manual, target_chat_id=target_chat_id)
     except Exception as exc:
         logger.error(f"Scan error: {exc}", exc_info=True)
         if is_manual:
             bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`", chat_id=target_chat_id)
 
-
-# ─── daily summary ─────────────────────────────────────────────────────────────
 
 def daily_summary(target_chat_id: str | None = None) -> None:
     try:
@@ -99,9 +58,14 @@ def daily_summary(target_chat_id: str | None = None) -> None:
 
 def send_wakeup() -> None:
     try:
+        df4h = calculate_indicators(get_gold_4h())
         df1h = calculate_indicators(get_gold_1h())
         price = get_gold_price()
-        bot.send_message(format_wakeup_message(price, df1h.iloc[-1]), reply_markup=bot.get_main_keyboard())
+        _, htf_bias = get_htf_bias(df4h, df1h)
+        bot.send_message(
+            format_wakeup_message(price, df1h.iloc[-1], htf_bias=htf_bias),
+            reply_markup=bot.get_main_keyboard(),
+        )
         logger.info("Wakeup message sent.")
     except Exception as exc:
         logger.error(f"Wakeup error: {exc}", exc_info=True)
@@ -116,8 +80,6 @@ def send_sleep() -> None:
         logger.error(f"Sleep notice error: {exc}", exc_info=True)
 
 
-# ─── entry point ──────────────────────────────────────────────────────────────
-
 def main() -> None:
     logger.info("Starting Gold Trading Bot …")
 
@@ -125,11 +87,9 @@ def main() -> None:
         logger.critical("Telegram connection failed — check token!")
         sys.exit(1)
 
-    # 1. Send startup welcome message with bottom buttons
     bot.send_message(format_startup(), reply_markup=bot.get_main_keyboard())
     logger.info("Startup message sent with main keyboard.")
 
-    # 2. Start real-time Telegram button listener in a background thread
     listener_thread = threading.Thread(
         target=start_listener,
         args=(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS, scan_gold, daily_summary),
@@ -138,9 +98,8 @@ def main() -> None:
     listener_thread.start()
     logger.info("Telegram interactive listener thread started.")
 
-    # 3. Setup and start scheduled scans (every 10 minutes)
     scheduler = setup_scheduler(lambda: scan_gold(is_manual=False), send_wakeup, send_sleep)
-    logger.info("Scheduler running (every 10 min). Ctrl+C to stop.")
+    logger.info("Scheduler running (every 5 min, 10:00-00:00 Tehran). Ctrl+C to stop.")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
