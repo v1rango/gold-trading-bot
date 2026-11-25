@@ -22,6 +22,7 @@ def run_gold_scan(
     is_manual: bool = False,
     send_wakeup_msg: bool = False,
     target_chat_id: Optional[str] = None,
+    state: Optional[dict] = None,
 ) -> None:
     """Fetch 4H/1H/30M/15M/5M Spot XAU/USD data, evaluate all engines, and alert Telegram."""
     df4h  = calculate_indicators(get_gold_4h())
@@ -45,7 +46,8 @@ def run_gold_scan(
         df4h, df1h, df30m, df15m, df5m, live_price=price["price"],
     )
 
-    state = load_state()
+    if state is None:
+        state = load_state()
     sent_any = False
 
     for sig in candidates:
