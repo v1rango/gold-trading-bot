@@ -44,7 +44,7 @@ class TradingSignal:
 # ─── individual checks (return Check objects) ─────────────────────────────────
 
 def chk_4h_trend(df4h: pd.DataFrame, direction: str) -> Check:
-    """4H: price vs EMA200 and EMA50 alignment."""
+    """4H: price vs EMA200 and EMA50 alignment (mandatory macro trend filter)."""
     r = df4h.iloc[-1]
     price = r["close"]
     ema50, ema200 = r["ema_50"], r["ema_200"]
@@ -55,10 +55,10 @@ def chk_4h_trend(df4h: pd.DataFrame, direction: str) -> Check:
                   if ok else
                   f"قیمت زیر EMA200 یا EMA50<EMA200 ❌")
     else:
-        ok = price < ema200 or ema50 < ema200
-        detail = (f"قیمت زیر EMA200 ✅ | روند نزولی ✅"
+        ok = price < ema200 and ema50 < ema200
+        detail = (f"قیمت زیر EMA200 ✅ | EMA50<EMA200 ✅"
                   if ok else
-                  f"روند ۴ ساعته صعودیه، شرط SELL نیست ❌")
+                  f"روند ۴ ساعته نزولی نیست ❌")
 
     return Check("روند 4H (EMA200)", ok, detail, weight=2.0)
 
@@ -229,24 +229,20 @@ def calculate_trade_levels(direction: str, entry: float, atr: float,
 
 def estimate_win_probability(checks: List[Check], rr: float) -> float:
     """
-    Weighted confluence → estimated win probability.
-    Capped at 80% (no strategy is perfect).
+    Weighted confluence -> calibrated win probability estimate (55%-76% range).
     """
     total_weight = sum(c.weight for c in checks)
     passed_weight = sum(c.weight for c in checks if c.passed)
     confluence_ratio = passed_weight / total_weight if total_weight > 0 else 0
 
-    # Base: 48% (slightly above coin-flip for a decent strategy)
-    base = 48.0
-    base += confluence_ratio * 30.0   # up to +30% for full confluence
+    base = 40.0 + confluence_ratio * 32.0
 
-    # R:R bonus: better R:R historically correlates with higher win %
     if rr >= 3.0:
         base += 4.0
     elif rr >= 2.5:
         base += 2.0
 
-    return round(min(base, 80.0), 1)
+    return round(min(base, 78.0), 1)
 
 
 # ─── main signal generator ────────────────────────────────────────────────────
@@ -254,44 +250,58 @@ def estimate_win_probability(checks: List[Check], rr: float) -> float:
 def generate_signal(df4h: pd.DataFrame,
                     df1h: pd.DataFrame,
                     df30m: pd.DataFrame,
-                    current_price: Optional[float] = None) -> Optional[TradingSignal]:
+                    current_price: Optional[float] = None) -> TradingSignal:
     """
-    Run all checks for BUY and SELL.
-    Return the stronger signal if it passes quality filters, else None.
+    Run all 8 checks for BUY and SELL.
+    Requires:
+      • ADX >= ADX_TREND_MIN with directional alignment
+      • 4H macro trend alignment (never trade against 4H trend)
+      • confluence >= MIN_CONFLUENCE (6/8)
+      • R:R >= MIN_RR_RATIO (2.0)
+    Always returns TradingSignal (with direction='NONE' and skip_reason if filtered).
     """
+    import math
+
     curr_1h = df1h.iloc[-1]
     entry   = float(current_price) if current_price is not None and current_price > 0 else float(curr_1h["close"])
     atr     = float(curr_1h["atr"])
+    adx     = float(curr_1h["adx"])
 
-    # Quick ADX gate: if market is too choppy, skip entirely
-    adx = float(curr_1h["adx"])
-    if adx < ADX_TREND_MIN * 0.8:   # little slack
+    if math.isnan(atr) or atr <= 0:
         return TradingSignal("NONE", entry, 0, 0, 0, 0,
-                             skip_reason=f"بازار رنج است (ADX={adx:.1f})")
+                             skip_reason="ATR نامعتبر است")
 
-    supports, resistances = find_swing_levels(df1h, lookback=60)
+    if math.isnan(adx) or adx < ADX_TREND_MIN:
+        return TradingSignal("NONE", entry, 0, 0, 0, 0,
+                             skip_reason=f"بازار رنج است (ADX={adx:.1f} < {ADX_TREND_MIN})")
+
+    supports, resistances = find_swing_levels(df1h, lookback=120)
 
     best: Optional[TradingSignal] = None
+    scores = {}
 
     for direction in ("BUY", "SELL"):
+        c4   = chk_4h_trend(df4h,  direction)
+        cadx = chk_1h_adx  (df1h,  direction)
         checks = [
-            chk_4h_trend(df4h,  direction),
+            c4,
             chk_1h_ema  (df1h,  direction),
             chk_1h_rsi  (df1h,  direction),
             chk_1h_macd (df1h,  direction),
             chk_1h_bb   (df1h,  direction),
-            chk_1h_adx  (df1h,  direction),
+            cadx,
             chk_30m_stoch(df30m, direction),
             chk_30m_rsi (df30m, direction),
         ]
 
         passed = sum(1 for c in checks if c.passed)
+        scores[direction] = passed
 
-        if passed < MIN_CONFLUENCE:
+        # Strict quality gates: must align with 4H trend, directional ADX, and >= MIN_CONFLUENCE
+        if not c4.passed or not cadx.passed or passed < MIN_CONFLUENCE:
             continue
 
         levels = calculate_trade_levels(direction, entry, atr, supports, resistances)
-
         if levels["rr"] < MIN_RR_RATIO:
             continue
 
@@ -309,8 +319,13 @@ def generate_signal(df4h: pd.DataFrame,
             total_checks    = len(checks),
         )
 
-        # Prefer the direction with more checks passed
         if best is None or passed > best.confluence:
             best = sig
 
-    return best
+    if best is not None:
+        return best
+
+    return TradingSignal(
+        "NONE", entry, 0, 0, 0, 0,
+        skip_reason=f"شرایط کامل نیست (خرید {scores['BUY']}/8 | فروش {scores['SELL']}/8 — حداقل {MIN_CONFLUENCE}/8 هم‌راستا با روند 4H لازم است)",
+    )

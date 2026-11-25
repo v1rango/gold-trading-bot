@@ -60,11 +60,13 @@ def format_signal(sig: TradingSignal, gold_price: dict) -> str:
     # 24h price info
     chg = gold_price["change_24h"]
     chg_e = "📈" if chg >= 0 else "📉"
+    src = gold_price.get("source", "XAU/USD")
 
     return (
         f"{dir_emoji} *سیگنال طلا — {dir_text}*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 قیمت فعلی:   `${gold_price['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
+        f"💰 قیمت لحظه‌ای: `${gold_price['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
+        f"📡 منبع دقیق: `{src}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🎯 نقطه ورود:   `${entry:,.2f}`\n"
         f"{'🟩' if is_buy else '🟥'} حد سود:       `${tp:,.2f}`  `({tp_pct:+.2f}%)`\n"
@@ -80,6 +82,26 @@ def format_signal(sig: TradingSignal, gold_price: dict) -> str:
         f"⏱ تایم‌فریم: `4H + 1H + 30M`\n"
         f"🕐 `{_now()}`\n"
         f"⚠️ _این سیگنال برای آموزش است، نه توصیه مالی_"
+    )
+
+
+def format_manual_status(gold_price: dict, curr_1h, reason: str) -> str:
+    """Format manual scan market report when no trade signal triggers."""
+    src = gold_price.get("source", "XAU/USD")
+    bid_ask = ""
+    if "bid" in gold_price and "ask" in gold_price:
+        bid_ask = f" (Bid: `{gold_price['bid']:,.2f}` | Ask: `{gold_price['ask']:,.2f}`)"
+    return (
+        f"🔍 *گزارش اسکن دستی طلا*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 قیمت لحظه‌ای: `${gold_price['price']:,.2f}`{bid_ask}\n"
+        f"📡 منبع: `{src}`\n"
+        f"📊 وضعیت: `{reason}`\n"
+        f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}`\n"
+        f"⚡ شاخص مومنتوم (RSI): `{curr_1h['rsi']:.1f}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"ℹ️ _سیگنال ورود با شروط دقیق یافت نشد._\n"
+        f"🕐 `{_now()}`"
     )
 
 
@@ -102,7 +124,7 @@ def format_daily_summary(gold: dict, news: list) -> str:
         f"📰 *اخبار مهم طلا:*\n"
         f"{news_lines}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏰ ربات ۱۲:۰۰ تا ۰۰:۰۰ فعال — هر ۱۵ دقیقه اسکن\n"
+        f"⏰ ربات ۱۲:۰۰ تا ۰۰:۰۰ فعال — هر ۱۰ دقیقه اسکن\n"
         f"🕐 `{_now()}`"
     )
 
@@ -111,11 +133,11 @@ def format_startup() -> str:
     return (
         "🚀 *ربات طلا فعال شد!*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "✅ Yahoo Finance: متصل\n"
+        "✅ دیتای زنده Spot (OANDA:XAUUSD): متصل\n"
         "✅ سیستم تحلیل: آماده\n\n"
         "🥇 *دارایی تحت نظر: طلا (XAU/USD)*\n\n"
         "⏰ *ساعت فعالیت:* ۱۲:۰۰ تا ۰۰:۰۰\n"
-        "🔄 *اسکن:* هر ۱۵ دقیقه\n\n"
+        "🔄 *اسکن:* هر ۱۰ دقیقه\n\n"
         "🎯 *۸ چک روی ۳ تایم‌فریم:*\n"
         "  • روند 4H — EMA 200\n"
         "  • EMA 20/50 (1H)\n"
@@ -125,10 +147,10 @@ def format_startup() -> str:
         "  • ADX 14 — قدرت روند (1H)\n"
         "  • Stochastic RSI (30M)\n"
         "  • RSI 14 (30M)\n\n"
-        "🔒 *فیلترهای کیفیت:*\n"
-        "  • حداقل ۵/۸ تأیید\n"
+        "🔒 *فیلترهای کیفیت (بک‌تست شده):*\n"
+        "  • حداقل ۶/۸ تأیید + هم‌راستا با 4H\n"
         "  • حداقل R:R = 2.0\n"
-        "  • ADX > 20 (بازار ترند)\n\n"
+        "  • ADX ≥ 20 (بازار ترند)\n\n"
         "⚠️ _سیگنال‌ها برای آموزش هستند_"
     )
 

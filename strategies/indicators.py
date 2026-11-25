@@ -52,10 +52,10 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def find_swing_levels(df: pd.DataFrame, lookback: int = 50, n: int = 5):
+def find_swing_levels(df: pd.DataFrame, lookback: int = 120):
     """
-    Find recent swing highs and lows.
-    Returns (supports, resistances) as sorted lists (ascending).
+    Find recent swing highs and lows using 5-bar fractals.
+    Returns (supports, resistances) sorted ascending so nearest levels to entry are preserved.
     """
     highs = df["high"].tail(lookback)
     lows  = df["low"].tail(lookback)
@@ -67,13 +67,12 @@ def find_swing_levels(df: pd.DataFrame, lookback: int = 50, n: int = 5):
     for i in range(2, len(vals_h) - 2):
         if vals_h[i] > vals_h[i-1] and vals_h[i] > vals_h[i-2] \
                 and vals_h[i] > vals_h[i+1] and vals_h[i] > vals_h[i+2]:
-            swing_highs.append(vals_h[i])
+            swing_highs.append(round(float(vals_h[i]), 2))
         if vals_l[i] < vals_l[i-1] and vals_l[i] < vals_l[i-2] \
                 and vals_l[i] < vals_l[i+1] and vals_l[i] < vals_l[i+2]:
-            swing_lows.append(vals_l[i])
+            swing_lows.append(round(float(vals_l[i]), 2))
 
-    # Keep most recent N unique levels
-    swing_highs = sorted(set(round(v, 1) for v in swing_highs), reverse=True)[:n]
-    swing_lows  = sorted(set(round(v, 1) for v in swing_lows))[:n]
+    swing_highs = sorted(set(swing_highs))
+    swing_lows  = sorted(set(swing_lows))
 
     return swing_lows, swing_highs   # supports, resistances

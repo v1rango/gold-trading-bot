@@ -19,7 +19,7 @@ from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
 from strategies.indicators import calculate_indicators
 from strategies.signals import generate_signal
 from bot.telegram_bot import TelegramBot
-from bot.formatter import format_signal, _now
+from bot.formatter import format_signal, format_manual_status
 
 
 def main():
@@ -39,31 +39,19 @@ def main():
         sig = generate_signal(df4h, df1h, df30m, current_price=price["price"])
 
         # 1. If valid signal found -> send full signal
-        if sig is not None and sig.direction in ("BUY", "SELL"):
+        if sig.direction in ("BUY", "SELL"):
             logger.info(f"Signal found: {sig.direction} at {sig.entry}")
             msg = format_signal(sig, price)
-            bot.send_message(msg)
+            bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard())
             return
 
         # 2. If manual scan requested -> notify user of market status
         if args.manual:
-            reason = sig.skip_reason if sig else "عدم تطابق شروط ورود"
-            curr_1h = df1h.iloc[-1]
-            status_msg = (
-                f"🔍 *گزارش اسکن دستی طلا*\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 قیمت لحظه‌ای: `${price['price']:,.2f}`\n"
-                f"📊 وضعیت بازار: `{reason}`\n"
-                f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}`\n"
-                f"⚡ شاخص مومنتوم (RSI): `{curr_1h['rsi']:.1f}`\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"ℹ️ _سیگنال ورود با شرایط معتبر یافت نشد._\n"
-                f"🕐 `{_now()}`"
-            )
-            bot.send_message(status_msg)
+            status_msg = format_manual_status(price, df1h.iloc[-1], sig.skip_reason)
+            bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard())
             logger.info("Manual scan status sent to Telegram.")
         else:
-            logger.info(f"Scan finished silently: {sig.skip_reason if sig else 'No signal'}")
+            logger.info(f"Scan finished silently: {sig.skip_reason}")
 
     except Exception as e:
         logger.error(f"Error during scan: {e}", exc_info=True)

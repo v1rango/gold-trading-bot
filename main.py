@@ -1,7 +1,7 @@
 """
 Gold Trading Bot — Main Entry Point
-Monitors XAU/USD across 4H / 1H / 30M timeframes.
-Active hours: 12:00 – 00:00 Tehran time (scan every 15 min).
+Monitors XAU/USD (OANDA Spot) across 4H / 1H / 30M timeframes.
+Active hours: 12:00 – 00:00 Tehran time (scan every 10 min).
 """
 import logging
 import sys
@@ -23,7 +23,7 @@ from data.news import fetch_news
 from strategies.indicators import calculate_indicators
 from strategies.signals import generate_signal
 from bot.telegram_bot import TelegramBot
-from bot.formatter import format_signal, format_daily_summary, format_startup, _now
+from bot.formatter import format_signal, format_daily_summary, format_startup, format_manual_status
 from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
@@ -68,23 +68,11 @@ def scan_gold(is_manual: bool = False) -> None:
 
         # 2. Manual Scan Request -> Provide informative market status report
         if is_manual:
-            reason = sig.skip_reason if sig else "عدم تطابق شروط ورود"
-            curr_1h = df1h.iloc[-1]
-            status_msg = (
-                f"🔍 *گزارش اسکن دستی طلا*\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 قیمت لحظه‌ای: `${price['price']:,.2f}`\n"
-                f"📊 وضعیت بازار: `{reason}`\n"
-                f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}`\n"
-                f"⚡ شاخص مومنتوم (RSI): `{curr_1h['rsi']:.1f}`\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"ℹ️ _سیگنال ورود با نسبت ریسک به ریوارد حداقل ۲ یافت نشد._\n"
-                f"🕐 `{_now()}`"
-            )
+            status_msg = format_manual_status(price, df1h.iloc[-1], sig.skip_reason)
             bot.send_message(status_msg, reply_markup=bot.get_scan_inline_keyboard())
             logger.info("Manual scan status sent to Telegram.")
         else:
-            logger.info(f"Automatic scan completed silently: {sig.skip_reason if sig else 'No signal'}")
+            logger.info(f"Automatic scan completed silently: {sig.skip_reason}")
 
     except Exception as exc:
         logger.error(f"Scan error: {exc}", exc_info=True)

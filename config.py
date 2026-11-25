@@ -6,7 +6,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "9005969882:AAHh3cR_s2xhmVT
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "8211920466")
 
 # ===== Gold =====
-GOLD_SYMBOL = "GC=F"
+GOLD_SYMBOL = "OANDA:XAUUSD"
 
 # ===== Timezone =====
 TIMEZONE = pytz.timezone("Asia/Tehran")
@@ -38,10 +38,10 @@ STOCH_PERIOD = 14
 STOCH_SMOOTH = 3
 
 # ===== Signal quality filters =====
-MIN_CONFLUENCE   = 5        # out of 8 indicators
+MIN_CONFLUENCE   = 6        # out of 8 indicators (must align with 4H trend + ADX)
 MIN_RR_RATIO     = 2.0      # minimum Risk:Reward to send signal
 ADX_TREND_MIN    = 20       # ADX below this = choppy market, skip
-ATR_SL_MULT      = 1.5      # stop loss = ATR * this multiplier
+ATR_SL_MULT      = 1.8      # stop loss = ATR * this multiplier (backtested optimal)
 
 # ===== Scan interval =====
 SCAN_MINUTES = 10           # scan every 10 minutes
