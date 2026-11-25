@@ -105,6 +105,40 @@ def format_manual_status(gold_price: dict, curr_1h, reason: str) -> str:
     )
 
 
+def format_wakeup_message(gold: dict, curr_1h) -> str:
+    """Morning wakeup message at 12:00 PM Tehran."""
+    chg = gold["change_24h"]
+    chg_e = "📈" if chg >= 0 else "📉"
+    src = gold.get("source", "OANDA:XAUUSD")
+    return (
+        f"☀️ *سلام! بیدار شدم — شروع رصد امروز طلا*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 قیمت شروع روز: `${gold['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
+        f"📡 منبع: `{src}`\n"
+        f"📈 ADX فعلی: `{curr_1h['adx']:.1f}` | ⚡ RSI: `{curr_1h['rsi']:.1f}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 تا ساعت ۰۰:۰۰ بامداد هر ۱۰ دقیقه بازار رو زیر نظر دارم و هر وقت سیگنال معتبر بود خبرت می‌کنم.\n"
+        f"🕐 `{_now()}`"
+    )
+
+
+def format_sleep_message(gold: dict) -> str:
+    """Goodnight message at 00:00 AM Tehran."""
+    chg = gold["change_24h"]
+    chg_e = "📈" if chg >= 0 else "📉"
+    src = gold.get("source", "OANDA:XAUUSD")
+    return (
+        f"😴 *ساعت ۱۲ شب شد — من می‌رم بخوابم!*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 آخرین قیمت طلا: `${gold['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
+        f"📡 منبع: `{src}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🌙 رصد خودکار تا فردا ساعت ۱۲:۰۰ ظهر متوقف می‌شه.\n"
+        f"☀️ فردا ظهر دوباره بیدار می‌شم. شب بخیر!\n"
+        f"🕐 `{_now()}`"
+    )
+
+
 def format_daily_summary(gold: dict, news: list) -> str:
     chg_e = "📈" if gold["change_24h"] >= 0 else "📉"
     news_lines = ""

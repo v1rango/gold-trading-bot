@@ -19,15 +19,32 @@ from data.gold import get_gold_4h, get_gold_1h, get_gold_30m, get_gold_price
 from strategies.indicators import calculate_indicators
 from strategies.signals import generate_signal
 from bot.telegram_bot import TelegramBot
-from bot.formatter import format_signal, format_manual_status
+from bot.formatter import (
+    format_signal, format_manual_status,
+    format_wakeup_message, format_sleep_message,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Gold Market Scanner")
     parser.add_argument("--manual", action="store_true", help="Manual scan (always reports status)")
+    parser.add_argument("--wakeup", action="store_true", help="Send 12:00 PM wakeup message and scan")
+    parser.add_argument("--sleep",  action="store_true", help="Send 00:00 AM goodnight message")
     args = parser.parse_args()
 
     bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+    # ── Goodnight mode (00:00 Tehran) ─────────────────────────────────────────
+    if args.sleep:
+        logger.info("Sending goodnight message...")
+        try:
+            price = get_gold_price()
+            bot.send_message(format_sleep_message(price), reply_markup=bot.get_main_keyboard())
+            logger.info("Goodnight message sent.")
+        except Exception as e:
+            logger.error(f"Error sending goodnight message: {e}", exc_info=True)
+            sys.exit(1)
+        return
 
     logger.info("Starting single scan...")
     try:
@@ -35,6 +52,14 @@ def main():
         df1h  = calculate_indicators(get_gold_1h())
         df30m = calculate_indicators(get_gold_30m())
         price = get_gold_price()
+
+        # ── Wakeup mode (12:00 Tehran) ────────────────────────────────────────
+        if args.wakeup:
+            bot.send_message(
+                format_wakeup_message(price, df1h.iloc[-1]),
+                reply_markup=bot.get_main_keyboard(),
+            )
+            logger.info("Wakeup message sent.")
 
         sig = generate_signal(df4h, df1h, df30m, current_price=price["price"])
 
@@ -55,7 +80,7 @@ def main():
 
     except Exception as e:
         logger.error(f"Error during scan: {e}", exc_info=True)
-        if args.manual:
+        if args.manual or args.wakeup:
             bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(e)[:200]}`")
         sys.exit(1)
 

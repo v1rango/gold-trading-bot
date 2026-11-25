@@ -2,18 +2,24 @@ name: Gold Market Scanner
 
 on:
   schedule:
-    # Runs every 10 minutes from 08:30 UTC to 20:30 UTC (12:00 PM to 00:00 AM Tehran time)
-    # Cron format: minute hour day-of-month month day-of-week
-    # Note: Sunday evening to Friday evening (Gold market days)
-    - cron: '*/10 8-20 * * 1-5'
-  
+    # Active window: 12:00 PM - 00:00 AM Tehran (UTC+3:30 = 08:30 - 20:30 UTC), Mon-Fri
+    - cron: '30 8 * * 1-5'          # 12:00 PM Tehran -> Wakeup + scan
+    - cron: '40,50 8 * * 1-5'       # 12:10, 12:20 PM Tehran -> Scan
+    - cron: '*/10 9-19 * * 1-5'     # 12:30 PM - 23:20 PM Tehran -> Scan every 10 min
+    - cron: '0,10,20 20 * * 1-5'    # 23:30, 23:40, 23:50 PM Tehran -> Scan
+    - cron: '30 20 * * 1-5'         # 00:00 AM Tehran -> Goodnight / Sleep
+
   # Allows manual button trigger from GitHub website or mobile app anytime!
   workflow_dispatch:
     inputs:
-      force_report:
-        description: 'Send status report even if no signal found'
-        type: boolean
-        default: true
+      mode:
+        description: 'Run mode'
+        type: choice
+        default: 'manual_scan'
+        options:
+          - manual_scan
+          - wakeup
+          - sleep
 
 jobs:
   scan:
@@ -39,7 +45,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python scan_once.py --manual
+            if [ "${{ inputs.mode }}" = "wakeup" ]; then
+              python scan_once.py --wakeup
+            elif [ "${{ inputs.mode }}" = "sleep" ]; then
+              python scan_once.py --sleep
+            else
+              python scan_once.py --manual
+            fi
+          elif [ "${{ github.event.schedule }}" = "30 8 * * 1-5" ]; then
+            python scan_once.py --wakeup
+          elif [ "${{ github.event.schedule }}" = "30 20 * * 1-5" ]; then
+            python scan_once.py --sleep
           else
             python scan_once.py
           fi

@@ -23,7 +23,10 @@ from data.news import fetch_news
 from strategies.indicators import calculate_indicators
 from strategies.signals import generate_signal
 from bot.telegram_bot import TelegramBot
-from bot.formatter import format_signal, format_daily_summary, format_startup, format_manual_status
+from bot.formatter import (
+    format_signal, format_daily_summary, format_startup,
+    format_manual_status, format_wakeup_message, format_sleep_message,
+)
 from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
@@ -93,6 +96,25 @@ def daily_summary() -> None:
         logger.error(f"Daily summary error: {exc}", exc_info=True)
 
 
+def send_wakeup() -> None:
+    try:
+        df1h = calculate_indicators(get_gold_1h())
+        price = get_gold_price()
+        bot.send_message(format_wakeup_message(price, df1h.iloc[-1]), reply_markup=bot.get_main_keyboard())
+        logger.info("Wakeup message sent.")
+    except Exception as exc:
+        logger.error(f"Wakeup error: {exc}", exc_info=True)
+
+
+def send_sleep() -> None:
+    try:
+        price = get_gold_price()
+        bot.send_message(format_sleep_message(price), reply_markup=bot.get_main_keyboard())
+        logger.info("Sleep message sent.")
+    except Exception as exc:
+        logger.error(f"Sleep notice error: {exc}", exc_info=True)
+
+
 # ─── entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -116,7 +138,7 @@ def main() -> None:
     logger.info("Telegram interactive listener thread started.")
 
     # 3. Setup and start scheduled scans (every 10 minutes)
-    scheduler = setup_scheduler(lambda: scan_gold(is_manual=False), daily_summary)
+    scheduler = setup_scheduler(lambda: scan_gold(is_manual=False), send_wakeup, send_sleep)
     logger.info("Scheduler running (every 10 min). Ctrl+C to stop.")
     try:
         scheduler.start()
