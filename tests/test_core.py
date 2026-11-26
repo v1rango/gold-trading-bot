@@ -16,12 +16,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config
-from bot.formatter import format_daily_summary, format_manual_status
+from bot.formatter import format_daily_summary, format_lifecycle_event, format_manual_status, format_signal
 from bot.telegram_bot import TelegramBot, redact_secrets
 import data.dashboard_export as dashboard_export
 import data.gold as gold_data
+import data.news as news_data
 import scan_once
+from strategies.backtester import _closed_slice_with_forming_tail, format_backtest_report, run_backtest
 from strategies.multi_engine import can_send_signal, get_htf_bias, load_state, record_signal, save_state
+from strategies.risk_guard import assess_market_risk
 import strategies.scan_runner as scan_runner
 from strategies.signals import Check, TradingSignal, generate_signal
 
@@ -150,6 +153,7 @@ def test_scan_runner_passes_normalized_htf_bias_and_df30m(monkeypatch, tmp_path)
     monkeypatch.setattr(scan_runner, "get_gold_5m", lambda: df5)
     monkeypatch.setattr(scan_runner, "get_gold_price", lambda: {"price": 3400.0, "change_24h": -0.5, "source": "TEST"})
     monkeypatch.setattr(scan_runner, "calculate_indicators", lambda df: df)
+    monkeypatch.setattr(scan_runner, "get_economic_calendar", lambda: [])
     monkeypatch.setattr(scan_runner, "scan_all_engines", lambda *a, **kw: ([], "روند کلان 4H+1H: نزولی هم‌راستا 🔴", "ok"))
 
     captured = {}
@@ -449,6 +453,7 @@ def test_scan_once_wakeup_and_sleep_dedup(monkeypatch, tmp_path):
     monkeypatch.setattr(scan_runner, "get_gold_5m", lambda: df5)
     monkeypatch.setattr(scan_runner, "get_gold_price", lambda: {"price": 3600.0, "change_24h": 0.2, "source": "TEST"})
     monkeypatch.setattr(scan_runner, "calculate_indicators", lambda df: df)
+    monkeypatch.setattr(scan_runner, "get_economic_calendar", lambda: [])
     monkeypatch.setattr(scan_runner, "scan_all_engines", lambda *a, **kw: ([], "خنثی", "ok"))
     monkeypatch.setattr(scan_runner, "export_dashboard_snapshot", lambda **kw: None)
 
@@ -500,6 +505,7 @@ def test_scan_once_cli_wakeup_and_sleep_write_github_output_and_dedup(monkeypatc
     monkeypatch.setattr(scan_runner, "get_gold_5m", lambda: _make_indicator_df(60, "5min", bullish=True))
     monkeypatch.setattr(scan_runner, "get_gold_price", lambda: {"price": 3600.0, "change_24h": 0.2, "source": "TEST"})
     monkeypatch.setattr(scan_runner, "calculate_indicators", lambda df: df)
+    monkeypatch.setattr(scan_runner, "get_economic_calendar", lambda: [])
     monkeypatch.setattr(scan_runner, "scan_all_engines", lambda *a, **kw: ([], "خنثی", "ok"))
     monkeypatch.setattr(scan_runner, "export_dashboard_snapshot", lambda **kw: None)
 
@@ -563,3 +569,191 @@ def test_formatter_markdown_and_engine_count():
     )
     assert "۴ موتور" in status
     assert "۵ موتور" not in status
+
+    # Calendar dict formatting in daily summary
+    cal_msg = format_daily_summary(
+        {"price": 3500.0, "change_24h": -0.3},
+        [{"title": "Core PCE", "tehran_date": "2026-11-26", "tehran_time": "17:00", "impact": "High", "forecast": "0.3%"}],
+    )
+    assert "Core PCE" in cal_msg
+    assert "17:00" in cal_msg
+
+
+# ── 8. risk_guard, lifecycle alerts, news, and backtester ────────────────────
+
+
+def test_risk_guard_spread_and_high_impact_news_warning():
+    now_utc = datetime(2026, 11, 26, 13, 10, tzinfo=timezone.utc)
+    news = [
+        {
+            "title": "CPI m/m",
+            "impact": "Medium",
+            "date_utc": "2026-11-26T13:15:00Z",
+            "tehran_time": "16:45",
+        },
+        {
+            "title": "Core PCE Price Index",
+            "impact": "High",
+            "date_utc": "2026-11-26T13:30:00Z",
+            "tehran_time": "17:00",
+        },
+    ]
+    price = {"price": 3500.0, "bid": 3499.0, "ask": 3501.2, "change_24h": 0.1}
+    risk = assess_market_risk(price, news, now_utc=now_utc)
+    assert risk["spread"] == 2.2
+    assert "اسپرد بالا" in risk["spread_warning"]
+    assert "20 دقیقه تا خبر مهم USD" in risk["news_warning"]
+    assert risk["nearby_high_news"]["title"] == "Core PCE Price Index"
+
+    sig = TradingSignal(
+        direction="BUY",
+        entry=3500.0,
+        stop_loss=3485.0,
+        take_profit=3530.0,
+        rr_ratio=2.0,
+        win_probability=65.0,
+        checks=[Check("Test", True, "ok")],
+        confluence=1,
+        total_checks=1,
+    )
+    formatted = format_signal(sig, price, risk_info=risk)
+    assert "اسپرد لحظه‌ای" in formatted
+    assert "Core PCE Price Index" in formatted
+
+
+def test_lifecycle_events_1r_tp_sl_and_no_duplicates():
+    # First check: bar hits +1R (3515) without hitting TP (3530) -> emits BREAKEVEN_1R once
+    idx1 = pd.DatetimeIndex(["2026-11-26 10:05:00"])
+    df1 = pd.DataFrame(
+        {"open": [3501.0], "high": [3518.0], "low": [3498.0], "close": [3515.0]},
+        index=idx1,
+    )
+    signals = [
+        {
+            "id": "sig_life_1",
+            "timestamp_utc": "2026-11-26T10:04:00Z",
+            "direction": "BUY",
+            "strategy_name": "اسنایپر پولبک (15M)",
+            "entry": 3500.0,
+            "stop_loss": 3485.0,
+            "take_profit": 3530.0,
+            "rr_ratio": 2.0,
+            "auto_outcome": "OPEN",
+        }
+    ]
+
+    evs1 = dashboard_export._evaluate_open_signals(signals, df1)
+    assert len(evs1) == 1
+    assert evs1[0]["type"] == "BREAKEVEN_1R"
+    assert "1R" in format_lifecycle_event(evs1[0])
+
+    # Second check on same bar -> must NOT repeat BREAKEVEN_1R
+    evs2 = dashboard_export._evaluate_open_signals(signals, df1)
+    assert evs2 == []
+
+    # Third check: later bar hits TP (3530) -> emits TP_HIT once
+    idx2 = pd.DatetimeIndex(["2026-11-26 10:05:00", "2026-11-26 10:10:00"])
+    df2 = pd.DataFrame(
+        {
+            "open": [3501.0, 3515.0],
+            "high": [3518.0, 3532.0],
+            "low": [3498.0, 3514.0],
+            "close": [3515.0, 3531.0],
+        },
+        index=idx2,
+    )
+    evs3 = dashboard_export._evaluate_open_signals(signals, df2)
+    assert len(evs3) == 1
+    assert evs3[0]["type"] == "TP_HIT"
+    assert "تارگت تاچ شد" in format_lifecycle_event(evs3[0])
+
+    # Fourth check: already closed -> no further events
+    evs4 = dashboard_export._evaluate_open_signals(signals, df2)
+    assert evs4 == []
+
+
+def test_fetch_news_prefers_economic_calendar(monkeypatch):
+    monkeypatch.setattr(
+        news_data,
+        "get_economic_calendar",
+        lambda: [
+            {"title": "Past Event", "impact": "High", "is_past": True, "is_today": True},
+            {"title": "Upcoming NFP", "impact": "High", "is_past": False, "is_today": True},
+        ],
+    )
+    items = news_data.fetch_news(limit=3)
+    assert len(items) == 1
+    assert items[0]["title"] == "Upcoming NFP"
+    assert items[0]["type"] == "GOLD"
+
+
+def test_backtester_zero_lookahead_and_trade_simulation():
+    # Verify closed HTF slice excludes unclosed 1H bar at 10:20
+    idx_1h = pd.date_range("2026-11-20 08:00:00", periods=4, freq="1h")
+    df_1h = pd.DataFrame({"close": [100.0, 101.0, 102.0, 103.0]}, index=idx_1h)
+    sliced = _closed_slice_with_forming_tail(
+        df_1h,
+        t_eval=pd.Timestamp("2026-11-20 10:20:00"),
+        tf_delta=pd.Timedelta(hours=1),
+    )
+    # 08:00 (closes 09:00) and 09:00 (closes 10:00) are closed; 10:00 (closes 11:00) is NOT!
+    assert sliced.index[-2] == pd.Timestamp("2026-11-20 09:00:00")
+    assert float(sliced.iloc[-2]["close"]) == 101.0
+
+    # Synthetic 5m steady uptrend during Tehran active hours (06:30+ UTC = 10:00+ Tehran)
+    df5m = _make_ohlcv_df(rows=300, start_utc="2026-11-20 07:00:00", freq="5min", base_price=3500.0, step=0.5)
+
+    def simple_buy_strat(s4, s1, s30, s15, s5, live_price):
+        if len(s5) < 40:
+            return []
+        return [
+            TradingSignal(
+                direction="BUY",
+                entry=live_price,
+                stop_loss=round(live_price - 5.0, 2),
+                take_profit=round(live_price + 10.0, 2),
+                rr_ratio=2.0,
+                win_probability=65.0,
+                strategy_name="Test_Uptrend",
+                timeframe="5M",
+                candle_ts=str(s5.index[-2]),
+            )
+        ]
+
+    report = run_backtest(
+        df5m=df5m,
+        df15m=df5m,
+        df30m=df5m,
+        df1h=df5m,
+        df4h=df5m,
+        strategy_fn=simple_buy_strat,
+        active_hours_tehran=(10, 24),
+        spread_points=0.40,
+        min_warmup_4h=205,
+    )
+    assert report.total_trades >= 1
+    assert report.wins >= 1
+    assert report.net_r > 0
+    summary_text = format_backtest_report(report)
+    assert "Test_Uptrend" in summary_text
+
+    # Also verify built-in scan_all_engines runs cleanly in historical backtest mode
+    hist_report = run_backtest(
+        df5m=df5m,
+        df15m=df5m,
+        df30m=df5m,
+        df1h=df5m,
+        df4h=df5m,
+        strategy_fn=None,
+        active_hours_tehran=(10, 24),
+        spread_points=0.40,
+        min_warmup_4h=205,
+    )
+    assert hist_report.total_trades >= 0
+
+    # Verify _is_candle_fresh respects simulated historical now_utc
+    from strategies.multi_engine import _is_candle_fresh
+    old_ts = pd.Timestamp("2025-01-10 10:00:00")
+    assert _is_candle_fresh(old_ts, max_age_minutes=20, now_utc=datetime(2025, 1, 10, 10, 10, tzinfo=timezone.utc)) is True
+    assert _is_candle_fresh(old_ts, max_age_minutes=20) is False
+

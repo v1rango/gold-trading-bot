@@ -12,6 +12,8 @@ import json
 import logging
 import math
 import os
+from pathlib import Path
+import tempfile
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -43,8 +45,17 @@ def load_state(path: str = STATE_FILE) -> dict:
 
 def save_state(state: dict, path: str = STATE_FILE) -> None:
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
+        dest = Path(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".state_", suffix=".tmp", dir=str(dest.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+            os.replace(tmp_path, dest)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
     except Exception as e:
         logger.warning(f"Could not save state file {path}: {e}")
 
@@ -162,10 +173,15 @@ def _build_ltf_signal(
     )
 
 
-def _is_candle_fresh(candle_ts: pd.Timestamp, max_age_minutes: int) -> bool:
+def _is_candle_fresh(
+    candle_ts: pd.Timestamp,
+    max_age_minutes: int,
+    now_utc: Optional[datetime] = None,
+) -> bool:
     """Verify the closed candle is recent (avoid firing stale signals on weekend/market halt)."""
     try:
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        ref = now_utc or datetime.now(timezone.utc)
+        now_naive = ref.astimezone(timezone.utc).replace(tzinfo=None) if ref.tzinfo else ref
         age_min = (now_naive - candle_ts.to_pydatetime()).total_seconds() / 60.0
         return age_min <= max_age_minutes
     except Exception:
@@ -174,11 +190,16 @@ def _is_candle_fresh(candle_ts: pd.Timestamp, max_age_minutes: int) -> bool:
 
 # ── Individual LTF Engines ───────────────────────────────────────────────────
 
-def _check_30m_precision(df30m: pd.DataFrame, htf_dir: Optional[str], live_price: float) -> Optional[TradingSignal]:
+def _check_30m_precision(
+    df30m: pd.DataFrame,
+    htf_dir: Optional[str],
+    live_price: float,
+    now_utc: Optional[datetime] = None,
+) -> Optional[TradingSignal]:
     if htf_dir is None or len(df30m) < 35:
         return None
     ts = df30m.index[-2]
-    if not _is_candle_fresh(ts, max_age_minutes=65):
+    if not _is_candle_fresh(ts, max_age_minutes=65, now_utc=now_utc):
         return None
 
     r, p = df30m.iloc[-2], df30m.iloc[-3]
@@ -214,12 +235,13 @@ def _check_30m_precision(df30m: pd.DataFrame, htf_dir: Optional[str], live_price
 def _check_bb_stoch_pullback(
     df: pd.DataFrame, htf_dir: Optional[str], live_price: float,
     tf_label: str, strat_name: str, max_age_min: int, sl_mult: float = 1.8, rr: float = 1.8, win_prob: float = 59.0,
+    now_utc: Optional[datetime] = None,
 ) -> Optional[TradingSignal]:
     """Shared BB/Stoch/StochRSI pullback checker used by both 15M_Sniper and 5M_Sniper."""
     if htf_dir is None or len(df) < 35:
         return None
     ts = df.index[-2]
-    if not _is_candle_fresh(ts, max_age_minutes=max_age_min):
+    if not _is_candle_fresh(ts, max_age_minutes=max_age_min, now_utc=now_utc):
         return None
 
     r, p = df.iloc[-2], df.iloc[-3]
@@ -254,12 +276,17 @@ def _check_bb_stoch_pullback(
     return None
 
 
-def _check_15m_3candle(df15m: pd.DataFrame, htf_dir: Optional[str], live_price: float) -> Optional[TradingSignal]:
+def _check_15m_3candle(
+    df15m: pd.DataFrame,
+    htf_dir: Optional[str],
+    live_price: float,
+    now_utc: Optional[datetime] = None,
+) -> Optional[TradingSignal]:
     """3-Candle + EMA200 + Stochastic inside confirmed 4H+1H trend on 15M."""
     if htf_dir is None or len(df15m) < 205:
         return None
     ts = df15m.index[-2]
-    if not _is_candle_fresh(ts, max_age_minutes=40):
+    if not _is_candle_fresh(ts, max_age_minutes=40, now_utc=now_utc):
         return None
 
     r, p, p2, p3 = df15m.iloc[-2], df15m.iloc[-3], df15m.iloc[-4], df15m.iloc[-5]
@@ -289,12 +316,17 @@ def _check_15m_3candle(df15m: pd.DataFrame, htf_dir: Optional[str], live_price: 
     return None
 
 
-def _check_15m_rsi7(df15m: pd.DataFrame, htf_dir: Optional[str], live_price: float) -> Optional[TradingSignal]:
+def _check_15m_rsi7(
+    df15m: pd.DataFrame,
+    htf_dir: Optional[str],
+    live_price: float,
+    now_utc: Optional[datetime] = None,
+) -> Optional[TradingSignal]:
     """Fast RSI(7) extreme bounce on 15M aligned with 4H+1H trend."""
     if htf_dir is None or len(df15m) < 35:
         return None
     ts = df15m.index[-2]
-    if not _is_candle_fresh(ts, max_age_minutes=40):
+    if not _is_candle_fresh(ts, max_age_minutes=40, now_utc=now_utc):
         return None
 
     r, p = df15m.iloc[-2], df15m.iloc[-3]
@@ -328,6 +360,7 @@ def scan_all_engines(
     df15m: pd.DataFrame,
     df5m: pd.DataFrame,
     live_price: float,
+    now_utc: Optional[datetime] = None,
 ) -> Tuple[List[TradingSignal], str, str]:
     """
     Evaluate all 4 timeframe engines in priority order (1H -> 30M -> 15M -> 5M).
@@ -345,25 +378,31 @@ def scan_all_engines(
         candidates.append(sig_1h)
 
     # 2. 30M Precision Dip (Priority 2)
-    sig_30 = _check_30m_precision(df30m, htf_dir, live_price)
+    sig_30 = _check_30m_precision(df30m, htf_dir, live_price, now_utc=now_utc)
     if sig_30:
         candidates.append(sig_30)
 
     # 3. 15M Engines (Priority 3)
-    sig_15_bb = _check_bb_stoch_pullback(df15m, htf_dir, live_price, "15M", "اسنایپر پولبک (15M)", max_age_min=40, sl_mult=1.8, rr=1.8, win_prob=58.5)
+    sig_15_bb = _check_bb_stoch_pullback(
+        df15m, htf_dir, live_price, "15M", "اسنایپر پولبک (15M)",
+        max_age_min=40, sl_mult=1.8, rr=1.8, win_prob=58.5, now_utc=now_utc,
+    )
     if sig_15_bb:
         candidates.append(sig_15_bb)
     else:
-        sig_15_3c = _check_15m_3candle(df15m, htf_dir, live_price)
+        sig_15_3c = _check_15m_3candle(df15m, htf_dir, live_price, now_utc=now_utc)
         if sig_15_3c:
             candidates.append(sig_15_3c)
         else:
-            sig_15_r7 = _check_15m_rsi7(df15m, htf_dir, live_price)
+            sig_15_r7 = _check_15m_rsi7(df15m, htf_dir, live_price, now_utc=now_utc)
             if sig_15_r7:
                 candidates.append(sig_15_r7)
 
     # 4. 5M Sniper Pullback (Priority 4)
-    sig_5_bb = _check_bb_stoch_pullback(df5m, htf_dir, live_price, "5M", "اسکالپ دقیق (5M)", max_age_min=20, sl_mult=1.8, rr=1.8, win_prob=59.5)
+    sig_5_bb = _check_bb_stoch_pullback(
+        df5m, htf_dir, live_price, "5M", "اسکالپ دقیق (5M)",
+        max_age_min=20, sl_mult=1.8, rr=1.8, win_prob=59.5, now_utc=now_utc,
+    )
     if sig_5_bb:
         candidates.append(sig_5_bb)
 

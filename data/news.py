@@ -1,6 +1,8 @@
 import feedparser
 import logging
 
+from data.dashboard_export import get_economic_calendar
+
 logger = logging.getLogger(__name__)
 
 FEEDS = [
@@ -13,7 +15,26 @@ GOLD_KEYWORDS = ["gold", "xau", "precious", "commodity", "commodities"]
 
 
 def fetch_news(limit: int = 6) -> list:
-    """Fetch latest BTC / Gold news from public RSS feeds."""
+    """
+    Fetch upcoming/today High & Medium impact USD events (ForexFactory) for Gold,
+    with public RSS fallback if calendar fetch returns nothing.
+    """
+    try:
+        cal = get_economic_calendar()
+        if cal:
+            upcoming = [ev for ev in cal if not ev.get("is_past")]
+            prioritized = upcoming or [ev for ev in cal if ev.get("is_today")] or cal
+            return [
+                {
+                    **ev,
+                    "source": "ForexFactory",
+                    "type": "GOLD",
+                }
+                for ev in prioritized[:limit]
+            ]
+    except Exception as e:
+        logger.warning(f"Economic calendar news fallback: {e}")
+
     results = []
 
     for feed_info in FEEDS:

@@ -25,7 +25,7 @@ def _prob_bar(prob: float) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 
-def format_signal(sig: TradingSignal, gold_price: dict) -> str:
+def format_signal(sig: TradingSignal, gold_price: dict, risk_info: dict | None = None) -> str:
     direction = sig.direction
     is_buy    = direction == "BUY"
 
@@ -69,6 +69,15 @@ def format_signal(sig: TradingSignal, gold_price: dict) -> str:
     chg_e = "📈" if chg >= 0 else "📉"
     src = gold_price.get("source", "XAU/USD")
 
+    risk_lines = ""
+    if risk_info:
+        if risk_info.get("spread") is not None:
+            risk_lines += f"📏 اسپرد لحظه‌ای: `${risk_info['spread']:.2f}`\n"
+        if risk_info.get("spread_warning"):
+            risk_lines += f"{risk_info['spread_warning']}\n"
+        if risk_info.get("news_warning"):
+            risk_lines += f"{risk_info['news_warning']}\n"
+
     return (
         f"{dir_emoji} *سیگنال طلا — {dir_text}*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -88,6 +97,7 @@ def format_signal(sig: TradingSignal, gold_price: dict) -> str:
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚙️ استراتژی: `{sig.strategy_name}`\n"
         f"⏱ تایم‌فریم: `{sig.timeframe}`\n"
+        f"{risk_lines}"
         f"🕐 `{_now()}`\n"
         f"⚠️ _این سیگنال برای آموزش است، نه توصیه مالی_"
     )
@@ -154,8 +164,16 @@ def format_daily_summary(gold: dict, news: list) -> str:
     chg_e = "📈" if gold["change_24h"] >= 0 else "📉"
     news_lines = ""
     for i, n in enumerate(news[:5], 1):
-        title = _clean_md_text(n["title"][:65])
-        news_lines += f"  {i}. [{title}]({n['link']})\n"
+        title = _clean_md_text(str(n.get("title", ""))[:65])
+        if n.get("tehran_time"):
+            imp = "🔴" if n.get("impact") == "High" else "🟡"
+            dt_str = f"{n.get('tehran_date', '')} {n.get('tehran_time', '')}".strip()
+            meta = f" | Fc:{n['forecast']}" if n.get("forecast") else ""
+            news_lines += f"  {i}. {imp} *{title}* (`{dt_str}`{meta})\n"
+        elif n.get("link"):
+            news_lines += f"  {i}. [{title}]({n['link']})\n"
+        else:
+            news_lines += f"  {i}. {title}\n"
     if not news_lines:
         news_lines = "  اخبار مهمی یافت نشد\n"
 
@@ -166,10 +184,48 @@ def format_daily_summary(gold: dict, news: list) -> str:
         f"💰 قیمت: `${gold['price']:,.2f}`\n"
         f"{chg_e} تغییر: `{gold['change_24h']:+.2f}%`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📰 *اخبار مهم طلا:*\n"
+        f"📰 *اخبار و رویدادهای مهم دلار/طلا:*\n"
         f"{news_lines}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⏰ ربات ۱۰:۰۰ تا ۰۰:۰۰ فعال — هر ۵ دقیقه اسکن\n"
+        f"🕐 `{_now()}`"
+    )
+
+
+def format_lifecycle_event(ev: dict) -> str:
+    """Format TP_HIT / SL_HIT / BREAKEVEN_1R follow-up alerts for previously emitted signals."""
+    ev_type = ev.get("type", "")
+    sig = ev.get("signal", {})
+    direction = sig.get("direction", "")
+    dir_fa = "خرید (BUY)" if direction == "BUY" else "فروش (SELL)"
+    strat = _clean_md_text(sig.get("strategy_name", ""))
+    entry = float(sig.get("entry", 0.0))
+    sl = float(sig.get("stop_loss", 0.0))
+    tp = float(sig.get("take_profit", 0.0))
+    rr = float(sig.get("rr_ratio", 0.0))
+
+    if ev_type == "TP_HIT":
+        return (
+            f"🎯 *تارگت تاچ شد!* (`{dir_fa}`)\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚙️ استراتژی: `{strat}`\n"
+            f"🎯 ورود: `${entry:,.2f}` ➔ 🟩 تارگت: `${tp:,.2f}` (`1:{rr:.1f}`)\n"
+            f"🕐 `{_now()}`"
+        )
+    if ev_type == "SL_HIT":
+        return (
+            f"🛑 *استاپ تاچ شد* (`{dir_fa}`)\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚙️ استراتژی: `{strat}`\n"
+            f"🎯 ورود: `${entry:,.2f}` ➔ 🛑 استاپ: `${sl:,.2f}`\n"
+            f"🕐 `{_now()}`"
+        )
+    return (
+        f"🛡️ *رسیدن به 1R — پیشنهاد ریسک‌فری (BE)* (`{dir_fa}`)\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚙️ استراتژی: `{strat}`\n"
+        f"🎯 ورود: `${entry:,.2f}` | 🟩 تارگت: `${tp:,.2f}`\n"
+        f"💡 قیمت به سود +1R رسید؛ می‌توانید استاپ را روی نقطه ورود بگذارید.\n"
         f"🕐 `{_now()}`"
     )
 

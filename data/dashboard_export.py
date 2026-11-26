@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import tempfile
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -51,10 +52,22 @@ def _load_history() -> Dict[str, Any]:
     return {"signals": [], "news": [], "news_updated_utc": "", "market": {}}
 
 
+def _atomic_json_write(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".dash_", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
 def _save_history(history: Dict[str, Any]) -> None:
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        _atomic_json_write(Path(HISTORY_FILE), history)
     except Exception as e:
         logger.warning(f"Failed to write {HISTORY_FILE}: {e}")
 
@@ -167,10 +180,14 @@ def _to_naive_utc(ts: Any) -> Optional[pd.Timestamp]:
         return None
 
 
-def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) -> None:
-    """Check 5m OHLC candles since each signal to suggest TP_HIT / SL_HIT."""
+def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) -> List[dict]:
+    """
+    Check 5m OHLC candles since each signal to detect TP_HIT, SL_HIT, or 1R breakeven.
+    Returns newly triggered lifecycle events for open signals only.
+    """
+    events: List[dict] = []
     if df5m is None or df5m.empty or not signals:
-        return
+        return events
 
     df_eval = df5m.copy()
     idx_utc = [_to_naive_utc(i) for i in df_eval.index]
@@ -189,11 +206,15 @@ def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) ->
         if sub.empty:
             continue
 
+        entry = float(sig.get("entry", 0.0))
         tp = float(sig["take_profit"])
         sl = float(sig["stop_loss"])
         direction = sig.get("direction")
+        risk_dist = abs(entry - sl)
+        be_1r = (entry + risk_dist) if direction == "BUY" else (entry - risk_dist)
 
         outcome = "OPEN"
+        hit_1r = False
         for _, bar in sub.iterrows():
             hi = float(bar["high"])
             lo = float(bar["low"])
@@ -204,6 +225,8 @@ def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) ->
                 if hi >= tp:
                     outcome = "TP_HIT"
                     break
+                if risk_dist > 0 and hi >= be_1r:
+                    hit_1r = True
             elif direction == "SELL":
                 if hi >= sl:
                     outcome = "SL_HIT"
@@ -211,8 +234,23 @@ def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) ->
                 if lo <= tp:
                     outcome = "TP_HIT"
                     break
+                if risk_dist > 0 and lo <= be_1r:
+                    hit_1r = True
 
         sig["auto_outcome"] = outcome
+        if outcome in ("TP_HIT", "SL_HIT"):
+            events.append({"type": outcome, "signal": dict(sig)})
+        elif hit_1r and not sig.get("alerted_1r"):
+            sig["alerted_1r"] = True
+            events.append({"type": "BREAKEVEN_1R", "signal": dict(sig)})
+
+    return events
+
+
+def get_economic_calendar() -> List[dict]:
+    """Fetch current weekly USD High/Medium calendar with cached fallback."""
+    history = _load_history()
+    return _fetch_economic_news(history.get("news"))
 
 
 def _make_signal_id(sig: Any, ts_utc_iso: str) -> str:
@@ -221,9 +259,7 @@ def _make_signal_id(sig: Any, ts_utc_iso: str) -> str:
 
 
 def _write_output_json(payload: Dict[str, Any]) -> None:
-    OUTPUT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    _atomic_json_write(OUTPUT_JSON_PATH, payload)
 
 
 def export_dashboard_snapshot(
@@ -237,7 +273,9 @@ def export_dashboard_snapshot(
     htf_text: str = "",
     reason_1h: str = "",
     emitted_signals: Optional[List[Any]] = None,
-) -> None:
+    risk_info: Optional[Dict[str, Any]] = None,
+    news_items: Optional[List[dict]] = None,
+) -> List[dict]:
     """Update persistent dashboard history and write static JSON for GitHub Pages."""
     history = _load_history()
     now_utc = datetime.now(timezone.utc)
@@ -276,15 +314,19 @@ def export_dashboard_snapshot(
         signals.insert(0, entry)
         existing_ids.add(sig_id)
 
-    _evaluate_open_signals(signals, df5m)
+    lifecycle_events = _evaluate_open_signals(signals, df5m)
     signals = signals[:MAX_SIGNALS_KEEP]
 
-    news = _fetch_economic_news(history.get("news"))
+    news = news_items if news_items is not None else _fetch_economic_news(history.get("news"))
+    risk = risk_info or {}
 
     market_snapshot = {
         "price": price.get("price"),
         "bid": price.get("bid"),
         "ask": price.get("ask"),
+        "spread": risk.get("spread"),
+        "spread_warning": risk.get("spread_warning", ""),
+        "news_warning": risk.get("news_warning", ""),
         "change_24h": price.get("change_24h", 0.0),
         "source": price.get("source", "OANDA:XAUUSD"),
         "htf_bias": htf_bias,
@@ -313,6 +355,7 @@ def export_dashboard_snapshot(
     _save_history(history)
     _write_output_json(payload)
     logger.info(f"Dashboard snapshot exported ({len(signals)} signals, {len(news)} news items).")
+    return lifecycle_events
 
 
 def _news_signature(items: Optional[List[dict]]) -> List[tuple]:

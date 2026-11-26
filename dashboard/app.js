@@ -375,13 +375,16 @@ function renderBotSnapshot() {
     ["EMA200 (15M)", i15.ema_200 != null ? `$${i15.ema_200}` : "--"],
     ["ATR 1H / 15M", i1h.atr != null ? `${i1h.atr} / ${i15.atr ?? "-"}` : "--"],
     ["RSI 5M (7)", i5.rsi_7 ?? "--"],
+    ["Spread", m.spread != null ? `$${Number(m.spread).toFixed(2)}` : "--"],
   ];
 
   document.getElementById("indicators-grid").innerHTML = rows
     .map(([k, v]) => `<div class="kv-row"><span class="muted">${escapeHtml(k)}</span><strong class="mono">${escapeHtml(v)}</strong></div>`)
     .join("");
 
-  document.getElementById("bot-reason-box").textContent = m.reason_1h || "در انتظار اسکن بعدی...";
+  const riskWarnings = [m.news_warning, m.spread_warning].filter(Boolean).join(" | ");
+  const reasonParts = [m.htf_text, m.reason_1h || "در انتظار اسکن بعدی...", riskWarnings].filter(Boolean);
+  document.getElementById("bot-reason-box").textContent = reasonParts.join(" — ");
 
   renderNews(dashboardData.news || []);
   renderBotSignals(dashboardData.signals || []);
@@ -937,6 +940,7 @@ function buildLiveAiContext() {
 - قیمت XAU/USD: ${q ? `$${q.price} (${q.change_24h >= 0 ? "+" : ""}${q.change_24h}%, ${q.source})` : "نامشخص"}
 - آخرین آپدیت ربات: ${dashboardData?.updated_at_tehran || "--"} تهران
 - جهت کلان: ${m.htf_text || m.htf_bias || "--"} | وضعیت 1H: ${m.reason_1h || "--"}
+- اسپرد و هشدار خبر: ${m.spread != null ? `$${m.spread}` : "--"} | ${m.news_warning || m.spread_warning || "بدون هشدار"}
 - اندیکاتور 4H: ${JSON.stringify(m.indicators_4h || {})}
 - اندیکاتور 1H: ${JSON.stringify(m.indicators_1h || {})}
 - اندیکاتور 30M: ${JSON.stringify(m.indicators_30m || {})}

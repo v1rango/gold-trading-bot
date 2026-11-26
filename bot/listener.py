@@ -2,6 +2,7 @@
 Telegram Updates Listener (Long-Polling).
 Listens for button clicks and commands from the user in real-time.
 """
+import threading
 import time
 import requests
 import logging
@@ -36,11 +37,13 @@ def start_listener(token: str, chat_ids: Union[str, List[str]],
 
             resp = requests.get(f"{base_url}/getUpdates", params=params, timeout=25)
             if resp.status_code != 200:
-                time.sleep(2)
+                logger.warning(f"getUpdates returned HTTP {resp.status_code}")
+                time.sleep(3)
                 continue
 
             data = resp.json()
             if not data.get("ok"):
+                logger.warning("getUpdates returned ok=false")
                 time.sleep(2)
                 continue
 
@@ -58,12 +61,16 @@ def start_listener(token: str, chat_ids: Union[str, List[str]],
                         continue
 
                     try:
-                        requests.post(f"{base_url}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": "در حال اسکن بازار..."})
+                        requests.post(f"{base_url}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": "در حال اسکن بازار..."}, timeout=10)
                     except Exception:
                         pass
 
                     if data_val == "scan_now":
-                        on_scan_request(is_manual=True, target_chat_id=sender_id)
+                        threading.Thread(
+                            target=on_scan_request,
+                            kwargs={"is_manual": True, "target_chat_id": sender_id},
+                            daemon=True,
+                        ).start()
 
                 # 2. Handle Text Messages & Bottom Keyboard Buttons
                 elif "message" in update:
@@ -76,10 +83,18 @@ def start_listener(token: str, chat_ids: Union[str, List[str]],
 
                     if text in ("🔍 همین الان اسکن کن (طلا)", "/scan", "اسکن"):
                         logger.info(f"Received manual scan request from {sender_id}")
-                        on_scan_request(is_manual=True, target_chat_id=sender_id)
+                        threading.Thread(
+                            target=on_scan_request,
+                            kwargs={"is_manual": True, "target_chat_id": sender_id},
+                            daemon=True,
+                        ).start()
                     elif text in ("📊 خلاصه وضعیت بازار", "/summary"):
                         logger.info(f"Received summary request from {sender_id}")
-                        on_summary_request(target_chat_id=sender_id)
+                        threading.Thread(
+                            target=on_summary_request,
+                            kwargs={"target_chat_id": sender_id},
+                            daemon=True,
+                        ).start()
                     elif text in ("/start", "ℹ️ راهنما", "/help"):
                         welcome_text = (
                             "👋 *به ربات سیگنال طلا خوش آمدید!*\n"
