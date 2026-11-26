@@ -2,10 +2,17 @@
 Telegram message formatter — Gold trading signals (Persian).
 """
 from datetime import datetime
+import re
 import pytz
 from strategies.signals import TradingSignal, Check
 
 TEHRAN_TZ = pytz.timezone("Asia/Tehran")
+
+
+def _clean_md_text(text: str) -> str:
+    """Clean Markdown-sensitive characters so Telegram legacy Markdown links parse reliably."""
+    cleaned = str(text or "").replace("[", "(").replace("]", ")")
+    return re.sub(r"[*_`]", "", cleaned)
 
 
 def _now() -> str:
@@ -102,7 +109,7 @@ def format_manual_status(gold_price: dict, curr_1h, reason: str, htf_bias: str =
         f"📊 وضعیت 1H: `{reason}`\n"
         f"📈 شاخص روند (ADX): `{curr_1h['adx']:.1f}` | ⚡ RSI: `{curr_1h['rsi']:.1f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"ℹ️ _در حال رصد ۵ موتور معاملاتی (5M/15M/30M/1H) — فعلاً ستاپ باکیفیت آماده نیست._\n"
+        f"ℹ️ _در حال رصد ۴ موتور معاملاتی (5M/15M/30M/1H) — فعلاً ستاپ باکیفیت آماده نیست._\n"
         f"🕐 `{_now()}`"
     )
 
@@ -147,8 +154,8 @@ def format_daily_summary(gold: dict, news: list) -> str:
     chg_e = "📈" if gold["change_24h"] >= 0 else "📉"
     news_lines = ""
     for i, n in enumerate(news[:5], 1):
-        title = n["title"][:65]
-        news_lines += f"  {i}\\. [{title}]({n['link']})\n"
+        title = _clean_md_text(n["title"][:65])
+        news_lines += f"  {i}. [{title}]({n['link']})\n"
     if not news_lines:
         news_lines = "  اخبار مهمی یافت نشد\n"
 

@@ -96,9 +96,10 @@ def _fetch_tv_candles(interval: str, bars: int = 350) -> pd.DataFrame:
 
             if len(candles) >= 50:
                 df = pd.DataFrame(candles).set_index("timestamp").sort_index()
-                df.dropna(inplace=True)
-                logger.info(f"Fetched {len(df)} candles ({interval}) from {symbol}")
-                return df
+                df = df[~df.index.duplicated(keep="last")].dropna()
+                if len(df) >= 50:
+                    logger.info(f"Fetched {len(df)} candles ({interval}) from {symbol}")
+                    return df
         except Exception as e:
             last_err = e
             logger.warning(f"TradingView candles failed for {symbol} ({interval}): {e}")
@@ -123,8 +124,9 @@ def _fetch_yf_candles(interval: str, period: str) -> pd.DataFrame:
     df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
     df = df[["open", "high", "low", "close", "volume"]].copy()
     if hasattr(df.index, "tz") and df.index.tz is not None:
-        df.index = df.index.tz_localize(None)
-    df.dropna(inplace=True)
+        df.index = df.index.tz_convert("UTC").tz_localize(None)
+    df = df.sort_index()
+    df = df[~df.index.duplicated(keep="last")].dropna()
     return df
 
 

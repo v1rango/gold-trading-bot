@@ -2,7 +2,7 @@
 Gold signal engine — multi-timeframe confluence analysis.
 8 checks across 4H / 1H / 30M timeframes.
 Only produces a signal when:
-  • confluence score >= MIN_CONFLUENCE (5/8)
+  • confluence score >= MIN_CONFLUENCE (6/8)
   • R:R >= MIN_RR_RATIO (2.0)
   • ADX >= ADX_TREND_MIN (20)  → not a choppy market
 """
@@ -47,8 +47,8 @@ class TradingSignal:
 # ─── individual checks (return Check objects) ─────────────────────────────────
 
 def chk_4h_trend(df4h: pd.DataFrame, direction: str) -> Check:
-    """4H: price vs EMA200 and EMA50 alignment (mandatory macro trend filter)."""
-    r = df4h.iloc[-1]
+    """4H: price vs EMA200 and EMA50 alignment on last closed candle (mandatory macro trend filter)."""
+    r = df4h.iloc[-2]
     price = r["close"]
     ema50, ema200 = r["ema_50"], r["ema_200"]
 
@@ -67,8 +67,8 @@ def chk_4h_trend(df4h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_1h_ema(df1h: pd.DataFrame, direction: str) -> Check:
-    """1H: EMA20 vs EMA50."""
-    curr, prev = df1h.iloc[-1], df1h.iloc[-2]
+    """1H: EMA20 vs EMA50 on last closed candle."""
+    curr, prev = df1h.iloc[-2], df1h.iloc[-3]
 
     if direction == "BUY":
         ok = curr["ema_20"] > curr["ema_50"]
@@ -89,8 +89,8 @@ def chk_1h_ema(df1h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_1h_rsi(df1h: pd.DataFrame, direction: str) -> Check:
-    """1H: RSI position for entry."""
-    rsi = df1h.iloc[-1]["rsi"]
+    """1H: RSI position for entry on last closed candle."""
+    rsi = df1h.iloc[-2]["rsi"]
 
     if direction == "BUY":
         ok = 30 <= rsi <= 60     # not overbought, decent entry zone
@@ -103,8 +103,8 @@ def chk_1h_rsi(df1h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_1h_macd(df1h: pd.DataFrame, direction: str) -> Check:
-    """1H: MACD vs signal line."""
-    curr, prev = df1h.iloc[-1], df1h.iloc[-2]
+    """1H: MACD vs signal line on last closed candle."""
+    curr, prev = df1h.iloc[-2], df1h.iloc[-3]
     cross_up   = prev["macd"] <= prev["macd_signal"] and curr["macd"] > curr["macd_signal"]
     cross_down = prev["macd"] >= prev["macd_signal"] and curr["macd"] < curr["macd_signal"]
 
@@ -123,8 +123,8 @@ def chk_1h_macd(df1h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_1h_bb(df1h: pd.DataFrame, direction: str) -> Check:
-    """1H: Bollinger Bands position."""
-    r    = df1h.iloc[-1]
+    """1H: Bollinger Bands position on last closed candle."""
+    r    = df1h.iloc[-2]
     pct  = r["bb_pct"]          # 0 = lower band, 1 = upper band
 
     if direction == "BUY":
@@ -138,8 +138,8 @@ def chk_1h_bb(df1h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_1h_adx(df1h: pd.DataFrame, direction: str) -> Check:
-    """1H: ADX trend strength + directional alignment."""
-    r   = df1h.iloc[-1]
+    """1H: ADX trend strength + directional alignment on last closed candle."""
+    r   = df1h.iloc[-2]
     adx = r["adx"]
     trending = adx >= ADX_TREND_MIN
 
@@ -160,8 +160,8 @@ def chk_1h_adx(df1h: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_30m_stoch(df30m: pd.DataFrame, direction: str) -> Check:
-    """30M: Stochastic RSI crossover."""
-    curr, prev = df30m.iloc[-1], df30m.iloc[-2]
+    """30M: Stochastic RSI crossover on last closed candle."""
+    curr, prev = df30m.iloc[-2], df30m.iloc[-3]
     k, d = curr["stoch_k"], curr["stoch_d"]
 
     if direction == "BUY":
@@ -181,8 +181,8 @@ def chk_30m_stoch(df30m: pd.DataFrame, direction: str) -> Check:
 
 
 def chk_30m_rsi(df30m: pd.DataFrame, direction: str) -> Check:
-    """30M: RSI confirmation of entry timing."""
-    rsi = df30m.iloc[-1]["rsi"]
+    """30M: RSI confirmation of entry timing on last closed candle."""
+    rsi = df30m.iloc[-2]["rsi"]
 
     if direction == "BUY":
         ok = rsi < 55
@@ -265,7 +265,12 @@ def generate_signal(df4h: pd.DataFrame,
     """
     import math
 
-    curr_1h = df1h.iloc[-1]
+    if len(df4h) < 3 or len(df1h) < 3 or len(df30m) < 3:
+        fallback_entry = float(current_price) if current_price is not None and current_price > 0 else 0.0
+        return TradingSignal("NONE", fallback_entry, 0, 0, 0, 0,
+                             skip_reason="داده کافی برای تحلیل نیست")
+
+    curr_1h = df1h.iloc[-2]
     entry   = float(current_price) if current_price is not None and current_price > 0 else float(curr_1h["close"])
     atr     = float(curr_1h["atr"])
     adx     = float(curr_1h["adx"])
@@ -278,7 +283,7 @@ def generate_signal(df4h: pd.DataFrame,
         return TradingSignal("NONE", entry, 0, 0, 0, 0,
                              skip_reason=f"بازار رنج است (ADX={adx:.1f} < {ADX_TREND_MIN})")
 
-    supports, resistances = find_swing_levels(df1h, lookback=120)
+    supports, resistances = find_swing_levels(df1h.iloc[:-1], lookback=120)
 
     best: Optional[TradingSignal] = None
     scores = {}

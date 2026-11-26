@@ -1,9 +1,11 @@
 """
 Shared scan pipeline used by both scan_once.py (GitHub Actions) and main.py (daemon).
 """
+from datetime import datetime
 import logging
 from typing import Optional
 
+from config import TIMEZONE
 from data.gold import (
     get_gold_4h, get_gold_1h, get_gold_30m, get_gold_15m, get_gold_5m, get_gold_price,
 )
@@ -33,22 +35,25 @@ def run_gold_scan(
     df5m  = calculate_indicators(get_gold_5m())
     price = get_gold_price()
 
-    _, htf_bias = get_htf_bias(df4h, df1h)
+    htf_dir, htf_text = get_htf_bias(df4h, df1h)
+    htf_bias = {"BUY": "BULLISH", "SELL": "BEARISH"}.get(htf_dir, "NEUTRAL")
+
+    if state is None:
+        state = load_state()
 
     if send_wakeup_msg:
-        bot.send_message(
-            format_wakeup_message(price, df1h.iloc[-1], htf_bias=htf_bias),
+        if bot.send_message(
+            format_wakeup_message(price, df1h.iloc[-1], htf_bias=htf_text),
             reply_markup=bot.get_main_keyboard(),
             chat_id=target_chat_id,
-        )
-        logger.info("Wakeup message sent.")
+        ):
+            state["last_wakeup_date"] = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+            logger.info("Wakeup message sent.")
 
     candidates, htf_text, reason_1h = scan_all_engines(
         df4h, df1h, df30m, df15m, df5m, live_price=price["price"],
     )
 
-    if state is None:
-        state = load_state()
     sent_any = False
     emitted_signals = []
 
@@ -82,6 +87,7 @@ def run_gold_scan(
             price=price,
             df4h=df4h,
             df1h=df1h,
+            df30m=df30m,
             df15m=df15m,
             df5m=df5m,
             htf_bias=htf_bias,

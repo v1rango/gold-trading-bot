@@ -316,10 +316,12 @@ function getEffectiveMarketPrice() {
   if (liveBrowserQuote?.price) return liveBrowserQuote;
   const m = dashboardData?.market;
   if (m?.price) {
+    const updatedStr = dashboardData?.updated_at_tehran || "";
+    const shortTs = updatedStr.length >= 16 ? updatedStr.slice(5, 16) : updatedStr || "JSON";
     return {
       price: Number(m.price),
       change_24h: Number(m.change_24h || 0),
-      source: "5M",
+      source: shortTs,
     };
   }
   return null;
@@ -354,19 +356,25 @@ function renderBotSnapshot() {
     bias === "BULLISH" ? "MACRO BULL" : bias === "BEARISH" ? "MACRO BEAR" : "MACRO NEUTRAL";
   biasEl.className = `mono bias-ind ${bias === "BULLISH" ? "text-bull" : bias === "BEARISH" ? "text-bear" : "muted"}`;
 
+  const i4h = m.indicators_4h || {};
   const i1h = m.indicators_1h || {};
+  const i30 = m.indicators_30m || {};
   const i15 = m.indicators_15m || {};
   const i5 = m.indicators_5m || {};
   const rows = [
+    ["RSI / ADX (4H)", i4h.rsi != null ? `${i4h.rsi} / ${i4h.adx ?? "-"}` : "--"],
+    ["EMA50 / 200 (4H)", i4h.ema_50 != null ? `$${i4h.ema_50} / $${i4h.ema_200 ?? "-"}` : "--"],
     ["RSI 1H (14)", i1h.rsi ?? "--"],
+    ["ADX 1H", i1h.adx ?? "--"],
+    ["EMA200 (1H)", i1h.ema_200 != null ? `$${i1h.ema_200}` : "--"],
+    ["BB 1H", i1h.bb_lower != null ? `${i1h.bb_lower} - ${i1h.bb_upper}` : "--"],
+    ["RSI 30M (14 / 7)", i30.rsi != null ? `${i30.rsi} / ${i30.rsi_7 ?? "-"}` : "--"],
+    ["Stoch 30M (K/D)", i30.osc_k != null ? `${i30.osc_k} / ${i30.osc_d}` : "--"],
     ["RSI 15M (7)", i15.rsi_7 ?? "--"],
     ["Stoch 15M (K/D)", i15.osc_k != null ? `${i15.osc_k} / ${i15.osc_d}` : "--"],
-    ["ADX 1H", i1h.adx ?? "--"],
-    ["ATR 1H / 15M", i1h.atr != null ? `${i1h.atr} / ${i15.atr ?? "-"}` : "--"],
     ["EMA200 (15M)", i15.ema_200 != null ? `$${i15.ema_200}` : "--"],
-    ["EMA200 (1H)", i1h.ema_200 != null ? `$${i1h.ema_200}` : "--"],
+    ["ATR 1H / 15M", i1h.atr != null ? `${i1h.atr} / ${i15.atr ?? "-"}` : "--"],
     ["RSI 5M (7)", i5.rsi_7 ?? "--"],
-    ["BB 1H", i1h.bb_lower != null ? `${i1h.bb_lower} - ${i1h.bb_upper}` : "--"],
   ];
 
   document.getElementById("indicators-grid").innerHTML = rows
@@ -499,6 +507,12 @@ function setOutcomeState(outcome) {
 }
 
 function handleSignalQuickAction(sig, action) {
+  const alreadyLogged = getJournal().some((j) => j.signalId === sig.id);
+  if (alreadyLogged) {
+    const ok = confirm("این سیگنال قبلاً در ژورنال ثبت شده است. آیا می‌خواهید دوباره آن را ثبت کنید؟");
+    if (!ok) return;
+  }
+
   const settings = getSettings();
   const baseRisk = settings.defaultRisk || 10;
 
@@ -831,10 +845,12 @@ function setupTradeForm() {
 
   document.getElementById("btn-export-json").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(getJournal(), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `gold_journal_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
   document.getElementById("btn-export-csv").addEventListener("click", () => {
@@ -844,10 +860,12 @@ function setupTradeForm() {
     });
     const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `gold_journal_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
   document.getElementById("input-import-json").addEventListener("change", async (e) => {
@@ -918,9 +936,12 @@ function buildLiveAiContext() {
 [بازار و قیمت]
 - قیمت XAU/USD: ${q ? `$${q.price} (${q.change_24h >= 0 ? "+" : ""}${q.change_24h}%, ${q.source})` : "نامشخص"}
 - آخرین آپدیت ربات: ${dashboardData?.updated_at_tehran || "--"} تهران
-- جهت کلان: ${m.htf_bias || "--"} | وضعیت 1H: ${m.reason_1h || "--"}
+- جهت کلان: ${m.htf_text || m.htf_bias || "--"} | وضعیت 1H: ${m.reason_1h || "--"}
+- اندیکاتور 4H: ${JSON.stringify(m.indicators_4h || {})}
 - اندیکاتور 1H: ${JSON.stringify(m.indicators_1h || {})}
+- اندیکاتور 30M: ${JSON.stringify(m.indicators_30m || {})}
 - اندیکاتور 15M: ${JSON.stringify(m.indicators_15m || {})}
+- اندیکاتور 5M: ${JSON.stringify(m.indicators_5m || {})}
 
 [اخبار USD امروز]
 ${todayNews.length ? todayNews.map((n) => `- ${n.tehran_time} | ${n.impact} | ${n.title} | پیش‌بینی:${n.forecast || "-"} قبلی:${n.previous || "-"} واقعی:${n.actual || "-"}`).join("\n") : "- خبر مهمی برای امروز ثبت نشده است."}

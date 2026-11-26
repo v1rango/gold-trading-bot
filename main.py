@@ -17,13 +17,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS, validate_telegram_config
 from data.gold import get_gold_1h, get_gold_4h, get_gold_price
 from data.news import fetch_news
 from strategies.indicators import calculate_indicators
 from strategies.multi_engine import get_htf_bias
 from strategies.scan_runner import run_gold_scan
-from bot.telegram_bot import TelegramBot
+from bot.telegram_bot import TelegramBot, TokenRedactingFilter, redact_secrets
 from bot.formatter import (
     format_daily_summary, format_startup,
     format_wakeup_message, format_sleep_message,
@@ -31,33 +31,37 @@ from bot.formatter import (
 from bot.listener import start_listener
 from scheduler.runner import setup_scheduler
 
-bot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS)
+bot: TelegramBot | None = None
 
 
 def scan_gold(is_manual: bool = False, target_chat_id: str | None = None) -> None:
     logger.info("=" * 55)
     logger.info(f"Gold scan started (manual={is_manual}) …")
     try:
+        assert bot is not None
         run_gold_scan(bot, is_manual=is_manual, target_chat_id=target_chat_id)
     except Exception as exc:
-        logger.error(f"Scan error: {exc}", exc_info=True)
-        if is_manual:
-            bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{str(exc)[:200]}`", chat_id=target_chat_id)
+        safe_err = redact_secrets(exc, TELEGRAM_BOT_TOKEN)
+        logger.error(f"Scan error: {safe_err}", exc_info=True)
+        if is_manual and bot is not None:
+            bot.send_message(f"⚠️ خطا در اسکن طلا:\n`{safe_err[:200]}`", chat_id=target_chat_id)
 
 
 def daily_summary(target_chat_id: str | None = None) -> None:
     try:
+        assert bot is not None
         price = get_gold_price()
         news  = fetch_news()
         gold_news = [n for n in news if n["type"] == "GOLD"] or news[:3]
         bot.send_message(format_daily_summary(price, gold_news), chat_id=target_chat_id)
         logger.info("Daily summary sent.")
     except Exception as exc:
-        logger.error(f"Daily summary error: {exc}", exc_info=True)
+        logger.error(f"Daily summary error: {redact_secrets(exc, TELEGRAM_BOT_TOKEN)}", exc_info=True)
 
 
 def send_wakeup() -> None:
     try:
+        assert bot is not None
         df4h = calculate_indicators(get_gold_4h())
         df1h = calculate_indicators(get_gold_1h())
         price = get_gold_price()
@@ -68,20 +72,28 @@ def send_wakeup() -> None:
         )
         logger.info("Wakeup message sent.")
     except Exception as exc:
-        logger.error(f"Wakeup error: {exc}", exc_info=True)
+        logger.error(f"Wakeup error: {redact_secrets(exc, TELEGRAM_BOT_TOKEN)}", exc_info=True)
 
 
 def send_sleep() -> None:
     try:
+        assert bot is not None
         price = get_gold_price()
         bot.send_message(format_sleep_message(price), reply_markup=bot.get_main_keyboard())
         logger.info("Sleep message sent.")
     except Exception as exc:
-        logger.error(f"Sleep notice error: {exc}", exc_info=True)
+        logger.error(f"Sleep notice error: {redact_secrets(exc, TELEGRAM_BOT_TOKEN)}", exc_info=True)
 
 
 def main() -> None:
+    global bot
     logger.info("Starting Gold Trading Bot …")
+
+    token, chat_ids = validate_telegram_config()
+    token_filter = TokenRedactingFilter(token)
+    for h in logging.getLogger().handlers:
+        h.addFilter(token_filter)
+    bot = TelegramBot(token, chat_ids)
 
     if not bot.test_connection():
         logger.critical("Telegram connection failed — check token!")
@@ -92,7 +104,7 @@ def main() -> None:
 
     listener_thread = threading.Thread(
         target=start_listener,
-        args=(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS, scan_gold, daily_summary),
+        args=(token, chat_ids, scan_gold, daily_summary),
         daemon=True,
     )
     listener_thread.start()

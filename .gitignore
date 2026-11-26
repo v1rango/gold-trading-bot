@@ -1,6 +1,8 @@
 venv/
 __pycache__/
+.pytest_cache/
 *.pyc
+.env
 bot.log
 state.json
 dashboard_history.json

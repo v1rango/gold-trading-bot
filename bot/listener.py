@@ -7,6 +7,8 @@ import requests
 import logging
 from typing import Callable, Union, List
 
+from bot.telegram_bot import redact_secrets
+
 
 logger = logging.getLogger("listener")
 
@@ -103,5 +105,5 @@ def start_listener(token: str, chat_ids: Union[str, List[str]],
                         requests.post(f"{base_url}/sendMessage", json=payload, timeout=10)
 
         except Exception as e:
-            logger.warning(f"Listener error (will retry): {e}")
+            logger.warning(f"Listener error (will retry): {redact_secrets(e, token)}")
             time.sleep(3)

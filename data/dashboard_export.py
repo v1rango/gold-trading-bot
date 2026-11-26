@@ -175,6 +175,7 @@ def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) ->
     df_eval = df5m.copy()
     idx_utc = [_to_naive_utc(i) for i in df_eval.index]
     df_eval["_utc"] = idx_utc
+    df_eval = df_eval.sort_values("_utc")
 
     for sig in signals:
         if sig.get("auto_outcome") in ("TP_HIT", "SL_HIT"):
@@ -183,8 +184,8 @@ def _evaluate_open_signals(signals: List[dict], df5m: Optional[pd.DataFrame]) ->
         if sig_utc is None:
             continue
 
-        # Examine candles formed at/after the signal bar (with 5-min buffer)
-        sub = df_eval[df_eval["_utc"] >= (sig_utc - pd.Timedelta(minutes=5))]
+        # Only examine 5m candles whose bar open time is at or after signal emission
+        sub = df_eval[df_eval["_utc"] >= sig_utc]
         if sub.empty:
             continue
 
@@ -229,6 +230,7 @@ def export_dashboard_snapshot(
     price: dict,
     df4h: Optional[pd.DataFrame] = None,
     df1h: Optional[pd.DataFrame] = None,
+    df30m: Optional[pd.DataFrame] = None,
     df15m: Optional[pd.DataFrame] = None,
     df5m: Optional[pd.DataFrame] = None,
     htf_bias: str = "NEUTRAL",
@@ -290,6 +292,7 @@ def export_dashboard_snapshot(
         "reason_1h": reason_1h,
         "indicators_4h": _extract_tf_snapshot(df4h),
         "indicators_1h": _extract_tf_snapshot(df1h),
+        "indicators_30m": _extract_tf_snapshot(df30m),
         "indicators_15m": _extract_tf_snapshot(df15m),
         "indicators_5m": _extract_tf_snapshot(df5m),
     }
@@ -312,25 +315,53 @@ def export_dashboard_snapshot(
     logger.info(f"Dashboard snapshot exported ({len(signals)} signals, {len(news)} news items).")
 
 
-def refresh_dashboard_from_cache(price: Optional[dict] = None) -> None:
-    """Lightweight refresh when outside active scan hours (e.g. weekends/night)."""
+def _news_signature(items: Optional[List[dict]]) -> List[tuple]:
+    return [
+        (
+            item.get("title", ""),
+            item.get("date_utc", ""),
+            item.get("actual", ""),
+            bool(item.get("is_today", False)),
+        )
+        for item in (items or [])
+    ]
+
+
+def refresh_dashboard_from_cache(price: Optional[dict] = None) -> bool:
+    """
+    Lightweight refresh when outside active scan hours (e.g. weekends/night).
+    Returns True if meaningful data (price, news items, or initial file) changed.
+    """
     history = _load_history()
     now_utc = datetime.now(timezone.utc)
     now_tehran = datetime.now(TIMEZONE)
+    ts_utc_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts_tehran_str = now_tehran.strftime("%Y-%m-%d %H:%M")
 
-    news = _fetch_economic_news(history.get("news"))
+    prev_news = history.get("news", [])
+    news = _fetch_economic_news(prev_news)
     market = history.get("market", {})
-    if price and price.get("price"):
+    has_price_update = bool(price and price.get("price"))
+    if has_price_update:
         market = {**market, **price}
 
+    meaningful_change = (
+        has_price_update
+        or not OUTPUT_JSON_PATH.exists()
+        or _news_signature(news) != _news_signature(prev_news)
+    )
+
     payload = {
-        "updated_at_utc": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "updated_at_tehran": now_tehran.strftime("%Y-%m-%d %H:%M"),
+        "updated_at_utc": ts_utc_iso,
+        "updated_at_tehran": ts_tehran_str,
         "market": market,
         "signals": history.get("signals", []),
         "news": news,
     }
     history["news"] = news
+    history["news_updated_utc"] = ts_utc_iso
+    history["updated_at_tehran"] = ts_tehran_str
     history["market"] = market
     _save_history(history)
     _write_output_json(payload)
+    return meaningful_change

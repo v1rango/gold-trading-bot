@@ -30,6 +30,8 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.market_scan.outputs.should_deploy }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,6 +58,7 @@ jobs:
             bot-state-
 
       - name: Run Market Scan
+        id: market_scan
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -88,16 +91,19 @@ jobs:
           key: bot-state-${{ github.run_id }}
 
       - name: Upload Pages artifact
-        if: success()
+        if: success() && steps.market_scan.outputs.should_deploy != 'false'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dashboard
 
   deploy_dashboard:
     needs: scan
-    if: success()
+    if: success() && needs.scan.outputs.should_deploy != 'false'
     runs-on: ubuntu-latest
     continue-on-error: true
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
