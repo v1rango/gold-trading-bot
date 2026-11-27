@@ -665,7 +665,7 @@ def test_lifecycle_events_1r_tp_sl_and_no_duplicates():
     evs3 = dashboard_export._evaluate_open_signals(signals, df2)
     assert len(evs3) == 1
     assert evs3[0]["type"] == "TP_HIT"
-    assert "تارگت تاچ شد" in format_lifecycle_event(evs3[0])
+    assert "تارگت سیگنال تاچ شد" in format_lifecycle_event(evs3[0])
 
     # Fourth check: already closed -> no further events
     evs4 = dashboard_export._evaluate_open_signals(signals, df2)
@@ -756,4 +756,113 @@ def test_backtester_zero_lookahead_and_trade_simulation():
     old_ts = pd.Timestamp("2025-01-10 10:00:00")
     assert _is_candle_fresh(old_ts, max_age_minutes=20, now_utc=datetime(2025, 1, 10, 10, 10, tzinfo=timezone.utc)) is True
     assert _is_candle_fresh(old_ts, max_age_minutes=20) is False
+
+
+def test_sequential_signal_numbering_and_lifecycle_reference(monkeypatch, tmp_path):
+    state_path = tmp_path / "state.json"
+    hist_path = tmp_path / "dashboard_history.json"
+    out_path = tmp_path / "dashboard_data.json"
+
+    monkeypatch.setattr(scan_runner, "load_state", lambda: load_state(str(state_path)))
+    monkeypatch.setattr(scan_runner, "save_state", lambda st: save_state(st, str(state_path)))
+    monkeypatch.setattr(dashboard_export, "HISTORY_FILE", str(hist_path))
+    monkeypatch.setattr(dashboard_export, "OUTPUT_JSON_PATH", out_path)
+    monkeypatch.setattr(dashboard_export, "_fetch_economic_news", lambda existing=None: [])
+    monkeypatch.setattr(scan_runner, "get_economic_calendar", lambda: [])
+
+    df4h = _make_indicator_df(210, "4h", bullish=True)
+    df1h = _make_indicator_df(210, "1h", bullish=True)
+    df30 = _make_indicator_df(60, "30min", bullish=True)
+    df15 = _make_indicator_df(210, "15min", bullish=True)
+    df5 = _make_indicator_df(60, "5min", bullish=True)
+
+    monkeypatch.setattr(scan_runner, "get_gold_4h", lambda: df4h)
+    monkeypatch.setattr(scan_runner, "get_gold_1h", lambda: df1h)
+    monkeypatch.setattr(scan_runner, "get_gold_30m", lambda: df30)
+    monkeypatch.setattr(scan_runner, "get_gold_15m", lambda: df15)
+    monkeypatch.setattr(scan_runner, "get_gold_5m", lambda: df5)
+    monkeypatch.setattr(scan_runner, "get_gold_price", lambda: {"price": 3600.0, "change_24h": 0.3, "source": "TEST"})
+    monkeypatch.setattr(scan_runner, "calculate_indicators", lambda df: df)
+
+    def _make_sig(strat: str, ts: str):
+        return TradingSignal(
+            direction="BUY",
+            entry=3600.0,
+            stop_loss=3585.0,
+            take_profit=3630.0,
+            rr_ratio=2.0,
+            win_probability=62.0,
+            checks=[Check("Trend", True, "ok")],
+            confluence=1,
+            total_checks=1,
+            timeframe="4H + 1H + 15M",
+            strategy_name=strat,
+            candle_ts=ts,
+        )
+
+    sent_texts = []
+    bot = MagicMock(spec=TelegramBot)
+    bot.get_main_keyboard.return_value = {}
+    bot.get_scan_inline_keyboard.return_value = {}
+
+    def _capture_send(text, **kwargs):
+        sent_texts.append(text)
+        return True
+
+    bot.send_message.side_effect = _capture_send
+
+    # Signal #1
+    monkeypatch.setattr(
+        scan_runner,
+        "scan_all_engines",
+        lambda *a, **kw: ([_make_sig("اسنایپر پولبک (15M)", "2026-11-26 11:45:00")], "صعودی", "ok"),
+    )
+    scan_runner.run_gold_scan(bot, is_manual=False)
+    assert "سیگنال طلا #1 —" in sent_texts[0]
+    assert load_state(str(state_path))["last_signal_num"] == 1
+
+    # Failed send must NOT burn #2
+    bot.send_message.side_effect = lambda text, **kwargs: False
+    monkeypatch.setattr(
+        scan_runner,
+        "scan_all_engines",
+        lambda *a, **kw: ([_make_sig("اسنایپر پولبک (15M)", "2026-11-26 12:00:00")], "صعودی", "ok"),
+    )
+    scan_runner.run_gold_scan(bot, is_manual=True)
+    assert load_state(str(state_path))["last_signal_num"] == 1
+
+    # Signal #2 succeeds (manual so bypasses 120m cooldown cleanly)
+    bot.send_message.side_effect = _capture_send
+    scan_runner.run_gold_scan(bot, is_manual=True)
+    assert "سیگنال طلا #2 —" in sent_texts[1]
+    assert load_state(str(state_path))["last_signal_num"] == 2
+
+    exported = json.loads(out_path.read_text(encoding="utf-8"))
+    nums = [s["signal_num"] for s in exported["signals"]]
+    assert nums == [2, 1]
+
+    # Lifecycle alerts reference exact signal number
+    msg_1r = format_lifecycle_event({"type": "BREAKEVEN_1R", "signal": exported["signals"][1]})
+    msg_tp = format_lifecycle_event({"type": "TP_HIT", "signal": exported["signals"][0]})
+    msg_sl = format_lifecycle_event({"type": "SL_HIT", "signal": exported["signals"][0]})
+    assert "سیگنال #1" in msg_1r
+    assert "سیگنال #2" in msg_tp
+    assert "سیگنال #2" in msg_sl
+
+    # Legacy pre-numbering signal falls back to timestamp instead of #None
+    legacy_msg = format_lifecycle_event({
+        "type": "BREAKEVEN_1R",
+        "signal": {
+            "direction": "SELL",
+            "strategy_name": "اسکالپ دقیق (5M)",
+            "timestamp_tehran": "2026-11-26 13:00",
+            "entry": 3560.44,
+            "stop_loss": 3566.0,
+            "take_profit": 3550.44,
+            "rr_ratio": 1.8,
+        },
+    })
+    assert "None" not in legacy_msg
+    assert "2026-11-26 13:00" in legacy_msg
+
 

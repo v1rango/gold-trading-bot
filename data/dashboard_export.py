@@ -254,7 +254,9 @@ def get_economic_calendar() -> List[dict]:
 
 
 def _make_signal_id(sig: Any, ts_utc_iso: str) -> str:
-    raw = f"{ts_utc_iso[:16]}|{sig.strategy_name}|{sig.direction}|{sig.entry}"
+    sig_num = getattr(sig, "signal_num", None)
+    num_part = f"#{sig_num}" if sig_num is not None else ""
+    raw = f"{ts_utc_iso[:16]}|{num_part}|{sig.strategy_name}|{sig.direction}|{sig.entry}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
@@ -296,6 +298,7 @@ def export_dashboard_snapshot(
         ][:4]
         entry = {
             "id": sig_id,
+            "signal_num": int(sig.signal_num) if getattr(sig, "signal_num", None) is not None else None,
             "timestamp_utc": ts_utc_iso,
             "timestamp_tehran": ts_tehran_str,
             "strategy_name": sig.strategy_name,

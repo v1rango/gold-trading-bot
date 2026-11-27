@@ -78,8 +78,11 @@ def format_signal(sig: TradingSignal, gold_price: dict, risk_info: dict | None =
         if risk_info.get("news_warning"):
             risk_lines += f"{risk_info['news_warning']}\n"
 
+    sig_num = getattr(sig, "signal_num", None)
+    num_tag = f" #{sig_num}" if sig_num is not None else ""
+
     return (
-        f"{dir_emoji} *سیگنال طلا — {dir_text}*\n"
+        f"{dir_emoji} *سیگنال طلا{num_tag} — {dir_text}*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 قیمت لحظه‌ای: `${gold_price['price']:,.2f}`  {chg_e} `{chg:+.2f}%`\n"
         f"📡 منبع دقیق: `{src}`\n"
@@ -199,6 +202,13 @@ def format_lifecycle_event(ev: dict) -> str:
     direction = sig.get("direction", "")
     dir_fa = "خرید (BUY)" if direction == "BUY" else "فروش (SELL)"
     strat = _clean_md_text(sig.get("strategy_name", ""))
+    sig_num = sig.get("signal_num")
+    num_label = f"سیگنال #{sig_num}" if sig_num is not None else "سیگنال"
+    ts_line = (
+        f"📅 زمان سیگنال: `{sig['timestamp_tehran']}`\n"
+        if sig_num is None and sig.get("timestamp_tehran")
+        else ""
+    )
     entry = float(sig.get("entry", 0.0))
     sl = float(sig.get("stop_loss", 0.0))
     tp = float(sig.get("take_profit", 0.0))
@@ -206,23 +216,26 @@ def format_lifecycle_event(ev: dict) -> str:
 
     if ev_type == "TP_HIT":
         return (
-            f"🎯 *تارگت تاچ شد!* (`{dir_fa}`)\n"
+            f"🎯 *تارگت {num_label} تاچ شد!* (`{dir_fa}`)\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{ts_line}"
             f"⚙️ استراتژی: `{strat}`\n"
             f"🎯 ورود: `${entry:,.2f}` ➔ 🟩 تارگت: `${tp:,.2f}` (`1:{rr:.1f}`)\n"
             f"🕐 `{_now()}`"
         )
     if ev_type == "SL_HIT":
         return (
-            f"🛑 *استاپ تاچ شد* (`{dir_fa}`)\n"
+            f"🛑 *استاپ {num_label} تاچ شد* (`{dir_fa}`)\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{ts_line}"
             f"⚙️ استراتژی: `{strat}`\n"
             f"🎯 ورود: `${entry:,.2f}` ➔ 🛑 استاپ: `${sl:,.2f}`\n"
             f"🕐 `{_now()}`"
         )
     return (
-        f"🛡️ *رسیدن به 1R — پیشنهاد ریسک‌فری (BE)* (`{dir_fa}`)\n"
+        f"🛡️ *رسیدن به 1R — {num_label} (پیشنهاد ریسک‌فری)* (`{dir_fa}`)\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{ts_line}"
         f"⚙️ استراتژی: `{strat}`\n"
         f"🎯 ورود: `${entry:,.2f}` | 🟩 تارگت: `${tp:,.2f}`\n"
         f"💡 قیمت به سود +1R رسید؛ می‌توانید استاپ را روی نقطه ورود بگذارید.\n"

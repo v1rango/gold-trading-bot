@@ -37,10 +37,11 @@ def load_state(path: str = STATE_FILE) -> dict:
                 data.setdefault("last_engine_bar", {})
                 data.setdefault("last_wakeup_date", "")
                 data.setdefault("last_sleep_date", "")
+                data.setdefault("last_signal_num", 0)
                 return data
         except Exception as e:
             logger.warning(f"Could not read state file {path}: {e}")
-    return {"last_dir_utc": {}, "last_engine_bar": {}, "last_wakeup_date": "", "last_sleep_date": ""}
+    return {"last_dir_utc": {}, "last_engine_bar": {}, "last_wakeup_date": "", "last_sleep_date": "", "last_signal_num": 0}
 
 
 def save_state(state: dict, path: str = STATE_FILE) -> None:

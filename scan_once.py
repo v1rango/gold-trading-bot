@@ -107,7 +107,7 @@ def _run_auto_mode(bot: TelegramBot, now: Optional[datetime] = None) -> bool:
     if now.hour == START_HOUR and now.minute <= 25 and should_send_wakeup(state, now=now):
         send_wakeup = True
 
-    run_gold_scan(bot, is_manual=False, send_wakeup_msg=send_wakeup, state=state)
+    run_gold_scan(bot, is_manual=False, send_wakeup_msg=send_wakeup, state=state, now=now)
     return True
 
 

@@ -452,12 +452,14 @@ function renderBotSignals(signals) {
       if (s.auto_outcome === "TP_HIT") autoTag = `<span class="tag tag-bull mono">TP</span>`;
       if (s.auto_outcome === "SL_HIT") autoTag = `<span class="tag tag-bear mono">SL</span>`;
 
+      const numTag = s.signal_num != null ? `<span class="tag tag-muted mono">#${escapeHtml(s.signal_num)}</span>` : "";
       const loggedTag = loggedIds.has(s.id) ? `<span class="tag tag-muted">ثبت‌شده</span>` : "";
 
       return `
         <div class="sig-row">
           <div class="sig-top">
             <div class="row-xs">
+              ${numTag}
               ${dirTag}
               <strong style="font-size:12px">${escapeHtml(s.strategy_name)}</strong>
             </div>
@@ -531,7 +533,8 @@ function handleSignalQuickAction(sig, action) {
   setDirectionState(sig.direction);
   document.getElementById("tf-engine").value = engineValue;
   setOutcomeState(action);
-  document.getElementById("tf-note").value = `${sig.strategy_name} (${sig.entry})`;
+  const numPrefix = sig.signal_num != null ? `#${sig.signal_num} ` : "";
+  document.getElementById("tf-note").value = `${numPrefix}${sig.strategy_name} (${sig.entry})`;
 
   const pnlInput = document.getElementById("tf-pnl");
   if (action === "TP") pnlInput.value = (baseRisk * Number(sig.rr_ratio || 2)).toFixed(2);
@@ -951,7 +954,7 @@ function buildLiveAiContext() {
 ${todayNews.length ? todayNews.map((n) => `- ${n.tehran_time} | ${n.impact} | ${n.title} | پیش‌بینی:${n.forecast || "-"} قبلی:${n.previous || "-"} واقعی:${n.actual || "-"}`).join("\n") : "- خبر مهمی برای امروز ثبت نشده است."}
 
 [سیگنال‌های اخیر]
-${recentSignals.length ? recentSignals.map((s) => `- ${s.timestamp_tehran} | ${s.direction} | ${s.strategy_name} (${s.timeframe}) | E:${s.entry} SL:${s.stop_loss} TP:${s.take_profit} RR:${s.rr_ratio} | ${s.auto_outcome}`).join("\n") : "- سیگنالی ثبت نشده است."}
+${recentSignals.length ? recentSignals.map((s) => `- ${s.signal_num != null ? `#${s.signal_num} | ` : ""}${s.timestamp_tehran} | ${s.direction} | ${s.strategy_name} (${s.timeframe}) | E:${s.entry} SL:${s.stop_loss} TP:${s.take_profit} RR:${s.rr_ratio} | ${s.auto_outcome}`).join("\n") : "- سیگنالی ثبت نشده است."}
 
 [آمار ژورنال]
 - کل:${stats.total} | برد:${stats.wins} | باخت:${stats.losses} | WR:${stats.winRate.toFixed(1)}% | Net PnL:${formatMoney(stats.netPnl)} | PF:${stats.profitFactor.toFixed(2)}`;

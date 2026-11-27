@@ -42,6 +42,7 @@ class TradingSignal:
     timeframe:       str           = "4H+1H+30M"
     strategy_name:   str           = "همگرایی چندتایم‌فریم (1H)"
     candle_ts:       str           = ""
+    signal_num:      Optional[int] = None
 
 
 # ─── individual checks (return Check objects) ─────────────────────────────────

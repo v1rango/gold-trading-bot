@@ -31,6 +31,7 @@ def run_gold_scan(
     send_wakeup_msg: bool = False,
     target_chat_id: Optional[str] = None,
     state: Optional[dict] = None,
+    now: Optional[datetime] = None,
 ) -> None:
     """Fetch 4H/1H/30M/15M/5M Spot XAU/USD data, evaluate all engines, and alert Telegram."""
     df4h  = calculate_indicators(get_gold_4h())
@@ -63,7 +64,8 @@ def run_gold_scan(
                 reply_markup=bot.get_main_keyboard(),
                 chat_id=target_chat_id,
             ):
-                state["last_wakeup_date"] = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+                ref_now = now or datetime.now(TIMEZONE)
+                state["last_wakeup_date"] = ref_now.strftime("%Y-%m-%d")
                 logger.info("Wakeup message sent.")
 
         sent_any = False
@@ -79,12 +81,16 @@ def run_gold_scan(
                 logger.info(f"Skipped {sig.strategy_name} ({sig.direction}): {skip_msg}")
                 continue
 
+            next_num = int(state.get("last_signal_num", 0)) + 1
+            sig.signal_num = next_num
+
             logger.info(
-                f"Signal triggered: [{sig.strategy_name}] {sig.direction} "
+                f"Signal triggered: #{next_num} [{sig.strategy_name}] {sig.direction} "
                 f"entry={sig.entry} TP={sig.take_profit} SL={sig.stop_loss} RR={sig.rr_ratio}"
             )
             msg = format_signal(sig, price, risk_info=risk_info)
             if bot.send_message(msg, reply_markup=bot.get_scan_inline_keyboard(), chat_id=target_chat_id):
+                state["last_signal_num"] = next_num
                 if not is_manual:
                     record_signal(sig, state)
                 emitted_signals.append(sig)
